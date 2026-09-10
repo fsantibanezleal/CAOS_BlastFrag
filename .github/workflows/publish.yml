@@ -1,0 +1,98 @@
+# Publish `blastfrag` to PyPI via PyPI Trusted Publishing (OIDC), with no stored token.
+#
+# ONE-TIME HUMAN SETUP, still outstanding: add a PyPI "pending publisher" for project `blastfrag`,
+# owner `fsantibanezleal`, repo `CAOS_BlastFrag`, workflow `publish.yml`, environment `pypi`.
+# Until that exists, an upload attempt fails at the OIDC exchange. The distribution name was
+# confirmed free on 2026-09-09.
+#
+# Triggered by a PUBLISHED RELEASE only, not by a tag push. Every release carries a tag, but this
+# package will accumulate tags before its first upload while the pending publisher is unregistered,
+# and a tag trigger would turn each of those into a red run on a healthy repo. Publishing is an
+# explicit act instead.
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Smoke-install the wheel in a clean venv and run the real path
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/python -m pip install dist/*.whl
+          cd /tmp   # import the INSTALLED wheel, not the checkout
+          /tmp/smoke/bin/python - <<'PY'
+          import blastfrag as bf
+
+          # An installed wheel must carry its data and be able to run the whole path from a clean
+          # venv: load the corpora through the integrity gate, reconstruct geometry, and refuse
+          # where refusal is correct.
+          train = bf.load_training_corpus()
+          assert len(train) == 97, len(train)
+          assert len({b.site for b in train}) == 10
+
+          holdout = bf.load_holdout(protocol="2012")
+          assert len(holdout) == 12
+          leaked = [b for b in holdout if b.meta["in_training_table"]]
+          assert [b.blast_id for b in leaked] == ["Rc1"], "the leakage flag did not survive packaging"
+
+          field = bf.load_field_holdout()
+          assert len(field) == 5 and all(b.meta["extrapolated"] for b in field)
+
+          report = bf.verify_reconstruction(train)
+          checks = [c for site in report.values() for c in site["checks"]]
+          assert len(checks) == 15 and all(c["ok"] for c in checks)
+
+          reconstructable = sum(1 for b in train if bf.has_absolute_geometry(b))
+          assert reconstructable == 91, reconstructable
+
+          miami = next(b for b in train if b.site == "Miami")
+          try:
+              bf.reconstruct_pattern(miami)
+          except bf.GeometryUnavailable:
+              pass
+          else:
+              raise SystemExit("the geometry negative control returned a number")
+
+          pattern = bf.reconstruct_pattern(next(b for b in train if b.blast_id == "En1"))
+          assert 4.4 < pattern.burden_m < 4.6, pattern.burden_m
+          assert pattern.charge_mass_kg > 0
+
+          print(f"smoke OK: blastfrag {bf.__version__}, 97 blasts, {len(checks)} constraints, "
+                f"{reconstructable} reconstructable, 6 abstaining")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # OIDC: PyPI mints a short-lived token, nothing is stored
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1

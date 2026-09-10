@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check blastfrag tests
+      - name: Tests
+        run: pytest
+
+  core-deps:
+    # The package claims a numpy-only core, and a claim in a README is not a guarantee. This job
+    # installs WITHOUT extras and asserts both halves: that the declared runtime dependency set is
+    # numpy alone, and that the package actually loads and reconstructs under that install. A user
+    # who wants a fragmentation curve should not have to install an ML stack to get one.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install core only
+        run: pip install .
+      - name: The core really is numpy-only, and works
+        run: |
+          cd /tmp   # import the INSTALLED package, never the source tree next to it
+          python - <<'PY'
+          import importlib.metadata as md
+
+          hard = [d for d in (md.requires("blastfrag") or []) if "extra ==" not in d]
+          assert hard == ["numpy>=1.24"], f"unexpected core dependencies: {hard}"
+
+          import blastfrag as bf
+
+          train = bf.load_training_corpus()          # runs the full integrity gate
+          assert len(train) == 97, len(train)
+          report = bf.verify_reconstruction(train)   # asserts every published constraint
+          checks = [c for site in report.values() for c in site["checks"]]
+          assert len(checks) == 15 and all(c["ok"] for c in checks), checks
+          print(f"OK: blastfrag {bf.__version__}, 97 blasts, {len(checks)} constraints verified")
+          PY
+
+  data-integrity:
+    # The corpus is the product's foundation, so it gets its own job rather than being one assertion
+    # inside the test matrix. This is the gate that found five transcription defects.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: The shipped corpus is still the published table, and has not moved
+        run: |
+          python - <<'PY'
+          import blastfrag as bf
+          from blastfrag.datasets import (
+              DATASET_DIGEST, check_source_integrity, compute_dataset_digest,
+          )
+
+          train = bf.load_training_corpus(verify=False)
+          check_source_integrity(train)
+          digest = compute_dataset_digest(train)
+          assert digest == DATASET_DIGEST, f"{digest} != {DATASET_DIGEST}"
+
+          # The gate must FAIL on the defect it was written for, or it is decoration.
+          import dataclasses
+          broken = [dataclasses.replace(b, Pf_kg_m3=1.47) if b.blast_id == "Ad19" else b
+                    for b in train]
+          try:
+              check_source_integrity(broken)
+          except bf.ContractViolation as exc:
+              assert "Pf_kg_m3.max" in str(exc), exc
+          else:
+              raise SystemExit("the integrity gate did not fire on a reintroduced defect")
+          print(f"OK: corpus digest {digest[:16]}, gate fires on a known defect")
+          PY
+
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Base-integrity guards
+        run: |
+          fail=0
+          if git ls-files | grep -qE '(^|/)\.env(\..+)?$'; then
+            echo "::error::a real .env is tracked"; fail=1; fi
+          if git ls-files | grep -qiE '(^|/)\.?venv|\.(dll|so|dylib|pt|pth)$'; then
+            echo "::error::a venv or native binary is tracked"; fail=1; fi
+          if git grep -nF 'D:\_Repos' -- . ':!.github' >/dev/null 2>&1; then
+            echo "::error::leaked local machine path in a tracked file"; fail=1; fi
+          # This repo exists because a product must not declare its own package. It must never grow
+          # an internal one either.
+          if git ls-files | grep -qE '(^|/)[a-z_]+lab/'; then
+            echo "::error::an internal lab package appeared"; fail=1; fi
+          # The source PDFs are copyrighted and stay in the private vault. Only numbers ship here.
+          if git ls-files | grep -qiE '\.(pdf|mht)$'; then
+            echo "::error::a source document is tracked; only numeric facts may ship"; fail=1; fi
+          if [ "$fail" -eq 0 ]; then echo "guards: OK"; fi
+          exit $fail
+
+      - name: Content standards, no em-dash and no emoji
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+
+          # An em-dash or an emoji in repo content reads as machine-written. Use a comma, a colon, a
+          # semicolon, a period or parentheses instead.
+          emoji = re.compile("[\U0001F000-\U0001FAFF\u2190-\u21FF\u2300-\u27BF\uFE0F]")
+          bad = []
+          for path in pathlib.Path(".").rglob("*"):
+              if not path.is_file() or ".git" in path.parts:
+                  continue
+              if path.suffix not in {".md", ".py", ".toml", ".yml", ".yaml", ".txt", ".csv"}:
+                  continue
+              try:
+                  text = path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  continue
+              for i, line in enumerate(text.splitlines(), 1):
+                  if "\u2014" in line or "\u2013" in line:
+                      bad.append(f"{path}:{i}: em or en dash")
+                  if emoji.search(line):
+                      bad.append(f"{path}:{i}: emoji")
+          for b in bad:
+              print(f"::error::{b}")
+          print("content standards: OK" if not bad else f"{len(bad)} violations")
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: Version coherence, VERSION == pyproject == CHANGELOG == __version__
+        run: |
+          python - <<'PY'
+          import pathlib, re
+
+          # The display form is zero-padded (0.01.000) and the manifest form is not (0.1.0), so a
+          # textual comparison reports drift for two spellings of the same version. Only the numbers
+          # are compared.
+          def norm(v):
+              m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", v.strip())
+              assert m, f"unparseable version {v!r}"
+              return tuple(int(g) for g in m.groups())
+
+          seen = {
+              "VERSION": pathlib.Path("VERSION").read_text().strip(),
+              "pyproject": re.search(r'^version\s*=\s*"([^"]+)"',
+                                     pathlib.Path("pyproject.toml").read_text(), re.M).group(1),
+              "CHANGELOG": re.search(r"^## \[([^\]]+)\]",
+                                     pathlib.Path("CHANGELOG.md").read_text(), re.M).group(1),
+              "__version__": re.search(r'^__version__\s*=\s*"([^"]+)"',
+                                       pathlib.Path("blastfrag/__init__.py").read_text(), re.M).group(1),
+          }
+          assert len({norm(v) for v in seen.values()}) == 1, f"version drift: {seen}"
+          print(f"OK: {seen['VERSION']} (manifest {seen['pyproject']})")
+          PY

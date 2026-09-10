@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blastfrag"
+version = "0.1.0"
+description = "Blast-fragmentation prediction from a bench pattern: the published ladder from Kuz-Ram to stacking ensembles, scored on real measured blasts under three split protocols, with the honest statistic named."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Felipe Santibanez-Leal" }]
+keywords = [
+  "blasting", "drill and blast", "rock fragmentation", "fragment size distribution",
+  "kuz-ram", "kuznetsov", "rosin-rammler", "swebrec", "crush zone model",
+  "mining", "open pit", "muckpile", "mine to mill", "comminution",
+  "rock factor", "blastability index", "in situ block size",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Physics",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+  "Operating System :: OS Independent",
+]
+# The core is numpy and nothing else. Every closed-form model, the geometry reconstruction, the
+# discriminant, the two published regressions, the metric suite, the split protocols and the
+# Levenberg-Marquardt training of the published neural network are written against numpy directly.
+# A user who wants a Kuz-Ram curve should not have to install an ML stack to get one.
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+# The tree ensembles and the support-vector rungs are the only things that need scikit-learn, and
+# gradient boosting is a further install again, so each is its own extra.
+learned = ["scikit-learn>=1.3"]
+boost = ["xgboost>=2.0"]
+export = ["onnx>=1.15", "skl2onnx>=1.16"]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+  "build>=1.0",
+  "scikit-learn>=1.3",
+  "xgboost>=2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/fsantibanezleal/CAOS_BlastFrag"
+Documentation = "https://github.com/fsantibanezleal/CAOS_BlastFrag/blob/main/docs/README.md"
+Issues = "https://github.com/fsantibanezleal/CAOS_BlastFrag/issues"
+Changelog = "https://github.com/fsantibanezleal/CAOS_BlastFrag/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+include = ["blastfrag*"]
+
+[tool.setuptools.package-data]
+blastfrag = ["data/*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]

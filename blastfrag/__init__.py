@@ -63,6 +63,15 @@ __all__ = [
     "verify_reconstruction",
 ]
 
+from .classical import (
+    crush_zone,
+    cunningham_uniformity_index,
+    kuznetsov_x50_m,
+    modified_uniformity_index,
+    rosin_rammler,
+    sieve_grid,
+    swebrec,
+)
 from .datasets import (
     PUBLISHED_DESCRIPTIVE_STATS,
     TRAINING_ENVELOPE,
@@ -82,6 +91,39 @@ from .geometry import (
     reconstruct_pattern,
     verify_reconstruction,
 )
+from .metrics import Score, bootstrap_interval, null_model_score, score, training_mean, worst_rows
+from .models import (
+    LADDER,
+    TIERS,
+    Arm,
+    CrushZone,
+    GroupDiscriminant,
+    Kuznetsov,
+    KuzRam,
+    NullModel,
+    Oracle,
+    PublishedRegression,
+    RefittedRegression,
+    Swebrec,
+    assign_group,
+    discriminant_score,
+)
+from .rockfactor import (
+    SCHEMES,
+    SITE_ROCK_FACTOR,
+    back_solve_rock_factor,
+    derive_site_rock_factors,
+    rock_factor,
+)
+from .splits import (
+    LeakageError,
+    Split,
+    all_protocols,
+    deduplicated_split,
+    duplicate_groups,
+    leave_one_site_out,
+    random_split,
+)
 from .types import (
     ANFO,
     FEATURES,
@@ -92,3 +134,21 @@ from .types import (
     Rock,
     SizeDistribution,
 )
+
+__all__ += [
+    # classical
+    "kuznetsov_x50_m", "cunningham_uniformity_index", "modified_uniformity_index",
+    "rosin_rammler", "swebrec", "crush_zone", "sieve_grid",
+    # rock factor
+    "rock_factor", "SCHEMES", "SITE_ROCK_FACTOR", "back_solve_rock_factor",
+    "derive_site_rock_factors",
+    # ladder
+    "Arm", "LADDER", "TIERS", "NullModel", "Oracle", "Kuznetsov", "KuzRam", "Swebrec",
+    "CrushZone", "GroupDiscriminant", "PublishedRegression", "RefittedRegression",
+    "assign_group", "discriminant_score",
+    # splits
+    "Split", "LeakageError", "random_split", "deduplicated_split", "leave_one_site_out",
+    "all_protocols", "duplicate_groups",
+    # metrics
+    "Score", "score", "null_model_score", "bootstrap_interval", "worst_rows", "training_mean",
+]

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "blastfrag"
-version = "0.1.0"
+version = "0.2.0"
 description = "Blast-fragmentation prediction from a bench pattern: the published ladder from Kuz-Ram to stacking ensembles, scored on real measured blasts under three split protocols, with the honest statistic named."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -64,6 +64,9 @@ blastfrag = ["data/*.csv"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "slow: trains many models; the seed-sweep reproduction lives here",
+]
 
 [tool.ruff]
 line-length = 110

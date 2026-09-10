@@ -30,6 +30,7 @@ from .types import Blast, Group, Prediction, SizeDistribution
 
 __all__ = [
     "Arm",
+    "PLAUSIBLE_X50_M",
     "NullModel",
     "Oracle",
     "Kuznetsov",
@@ -40,6 +41,14 @@ __all__ = [
     "LADDER",
     "TIERS",
 ]
+
+
+PLAUSIBLE_X50_M = (0.001, 3.0)
+"""What a muckpile mean fragment size can physically be, in metres.
+
+Deliberately wide: the corpus spans 0.02 to 0.96 m, and this is three times looser at the top. It is
+a domain check, not a calibration. Anything outside it is a model that has left the problem.
+"""
 
 
 class Arm(ABC):
@@ -68,6 +77,34 @@ class Arm(ABC):
     def _abstain(self, blast: Blast, reason: str) -> Prediction:
         return Prediction(
             method=self.name, blast_id=blast.blast_id, x50_m=None, abstain_reason=reason
+        )
+
+    def _guarded(self, blast: Blast, value: float, **kwargs) -> Prediction:
+        """Return a prediction, or abstain when it is not a fragment size.
+
+        A muckpile fragment is between a millimetre and a couple of metres. Outside that the model
+        has left the domain, and the number is arithmetic rather than a prediction.
+
+        This is not hypothetical. Holding one site out and refitting the published power law makes it
+        extrapolate to **10.48 m**, and a benchmark that scores that number rather than refusing it
+        reports a variance explained of -11355 for a fold, which then swamps every honest fold it is
+        pooled with. Refusing is both more truthful and more informative: the arm did not do badly on
+        that site, it declined to answer.
+        """
+        if not math.isfinite(value) or not PLAUSIBLE_X50_M[0] <= value <= PLAUSIBLE_X50_M[1]:
+            return Prediction(
+                method=self.name,
+                blast_id=blast.blast_id,
+                x50_m=None,
+                abstain_reason=(
+                    f"the model returned {value:.4g} m, which is outside the plausible fragment "
+                    f"range {PLAUSIBLE_X50_M[0]} to {PLAUSIBLE_X50_M[1]} m. This is the model leaving "
+                    "its domain, not a prediction."
+                ),
+                **kwargs,
+            )
+        return Prediction(
+            method=self.name, blast_id=blast.blast_id, x50_m=value, **kwargs
         )
 
 
@@ -100,7 +137,7 @@ class NullModel(Arm):
     def predict_one(self, blast: Blast) -> Prediction:
         if self.mean_m is None:
             return self._abstain(blast, "the null model has not been fitted")
-        return Prediction(method=self.name, blast_id=blast.blast_id, x50_m=self.mean_m)
+        return self._guarded(blast, self.mean_m)
 
 
 class Oracle(Arm):
@@ -169,10 +206,9 @@ class Kuznetsov(Arm):
             pattern = reconstruct_pattern(blast)
         except GeometryUnavailable as exc:
             return self._abstain(blast, str(exc))
-        return Prediction(
-            method=self.name,
-            blast_id=blast.blast_id,
-            x50_m=kuznetsov_x50_m(pattern, factor, timing_factor=self.timing_factor),
+        return self._guarded(
+            blast,
+            kuznetsov_x50_m(pattern, factor, timing_factor=self.timing_factor),
             detail={
                 "rock_factor": factor,
                 "rock_factor_origin": "back-solved per site from the published predictions, derived",
@@ -408,10 +444,9 @@ class PublishedRegression(Arm):
     def predict_one(self, blast: Blast) -> Prediction:
         group = assign_group(blast)
         coefficients = self.coefficients[group]
-        return Prediction(
-            method=self.name,
-            blast_id=blast.blast_id,
-            x50_m=coefficients.predict(blast),
+        return self._guarded(
+            blast,
+            coefficients.predict(blast),
             group=group,
             detail={"equation": coefficients.source, "discriminant_score": discriminant_score(blast)},
         )
@@ -468,10 +503,9 @@ class RefittedRegression(Arm):
                 f"no refitted equation for group {group}: the training rows supplied did not "
                 "contain enough of that group to fit seven exponents",
             )
-        return Prediction(
-            method=self.name,
-            blast_id=blast.blast_id,
-            x50_m=coefficients.predict(blast),
+        return self._guarded(
+            blast,
+            coefficients.predict(blast),
             group=group,
             detail={"equation": coefficients.source},
         )

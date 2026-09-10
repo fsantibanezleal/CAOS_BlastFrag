@@ -32,7 +32,7 @@ Quick start::
 
 from __future__ import annotations
 
-__version__ = "0.01.000"
+__version__ = "0.02.000"
 __all__ = [
     "__version__",
     # types
@@ -63,6 +63,15 @@ __all__ = [
     "verify_reconstruction",
 ]
 
+from .benchmark import (
+    KILL_CRITERION,
+    ArmResult,
+    BenchmarkResult,
+    ProtocolResult,
+    default_arms,
+    run_benchmark,
+    run_fixed_holdout,
+)
 from .classical import (
     crush_zone,
     cunningham_uniformity_index,
@@ -151,4 +160,9 @@ __all__ += [
     "all_protocols", "duplicate_groups",
     # metrics
     "Score", "score", "null_model_score", "bootstrap_interval", "worst_rows", "training_mean",
+]
+
+__all__ += [
+    "run_benchmark", "run_fixed_holdout", "default_arms", "KILL_CRITERION",
+    "BenchmarkResult", "ProtocolResult", "ArmResult",
 ]

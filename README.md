@@ -5,7 +5,7 @@
 
 Blast-fragmentation prediction from a bench pattern. The published ladder from the 1973 classical
 mean-size equation to the 2025 stacking ensemble, scored on real measured blasts under three split
-protocols, with the honest statistic named.
+protocols, with the statistic named (variance explained, not squared correlation).
 
 ```bash
 pip install blastfrag
@@ -90,7 +90,7 @@ Predictions on it are stamped.
 The [`docs/`](docs/README.md) wiki carries the theory, every equation term by term with its source,
 the data contract, and the reasoning behind each modelling choice.
 
-## Honest scope
+## Scope
 
 No mechanistic simulation: there is no discrete-element or hybrid stress blasting model here, and a
 hand-rolled approximation under those names would be worse than nothing. No non-ideal detonics. No

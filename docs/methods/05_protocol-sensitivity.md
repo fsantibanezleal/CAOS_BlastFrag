@@ -75,14 +75,14 @@ That is the finding, and it is more interesting than a negative result. It is a 
 the corpus can support: ninety-seven blasts from ten campaigns are enough to fit a model that
 interpolates between campaigns it has seen, and not enough to fit one that reaches a new one.
 
-### 4.2 The classical model gets better under the honest protocol
+### 4.2 The classical model gets better when held out by site
 
 From -0.027 on a random split to **0.311** held out by site. The model did not change. The
 comparison did: on a random split it competes against arms that have memorised near-duplicates of
 the test rows, and on a site-held-out split it does not.
 
 This inverts the usual reading of the classical model as the weak baseline. On a leaking protocol it
-looks worse than everything; on an honest one it is second only to the published regression.
+looks worse than everything; held out by site it is second only to the published regression.
 
 ### 4.3 Deduplication is not the whole story
 
@@ -94,7 +94,7 @@ learned arms up. The shared **site** is.
 
 With one site held out, the refitted regression extrapolates to a mean fragment size of **10.48 m**.
 Scoring that number rather than refusing it produced a per-fold variance explained near -11000, which
-then swamped every honest fold pooled with it.
+then swamped every other fold pooled with it.
 
 A prediction outside 0.001 to 3 m is now refused with a reason instead of scored. That is both truer
 and more informative: the arm did not do badly on that site, it declined to answer. Eleven of the

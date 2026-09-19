@@ -12,7 +12,7 @@ strength of 100 MPa the two give rock factors 0.85 apart, which moves a predicte
 roughly a quarter.
 
 So all of them ship, side by side, named, with the source on each. Presenting one as "the" rock
-factor would hide the subjectivity that is the honest content of this parameter.
+factor would hide the subjectivity that is the real content of this parameter.
 """
 
 from __future__ import annotations

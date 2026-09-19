@@ -310,7 +310,7 @@ class PublishedNeuralNetwork(Arm):
 
         # The target was min-max normalised onto [0, 1], so that interval is the whole of what a
         # network fitted on it can assert. A raw output outside it is the network extrapolating past
-        # every size it has ever seen, and the honest reading is the nearest thing it can assert.
+        # every size it has ever seen, so the output is clamped to the nearest value it can assert.
         #
         # This is not cosmetic. On one hold-out blast the eight simulations disagree wildly, and
         # without the clamp their mean lands at zero and drags the arm's variance explained from

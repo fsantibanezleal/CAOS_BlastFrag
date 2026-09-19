@@ -34,7 +34,7 @@ A third route bypasses the sum entirely: Hustrulid's five-band lookup on the Pro
 index, 3 for very soft rock through 13 for rigid and homogeneous.
 
 **All three ship, side by side, named, with the source on each.** Presenting one as *the* rock factor
-would hide the subjectivity that is the honest content of this parameter. The package's comparison
+would hide the subjectivity that is the real content of this parameter. The package's comparison
 view exists to make the disagreement visible rather than to argue it away.
 
 ## 2. Every scheme refuses rather than defaults

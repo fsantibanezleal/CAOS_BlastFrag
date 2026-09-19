@@ -87,7 +87,7 @@ class Arm(ABC):
 
         This is not hypothetical. Holding one site out and refitting the published power law makes it
         extrapolate to **10.48 m**, and a benchmark that scores that number rather than refusing it
-        reports a variance explained of -11355 for a fold, which then swamps every honest fold it is
+        reports a variance explained of -11355 for a fold, which then swamps every other fold it is
         pooled with. Refusing is both more truthful and more informative: the arm did not do badly on
         that site, it declined to answer.
         """

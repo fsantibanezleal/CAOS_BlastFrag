@@ -192,7 +192,7 @@ one-metre on-site scale.
 
 Its Young modulus is 5.6 GPa. The corpus minimum is 9.57. So **every prediction on this set is an
 extrapolation**, on the feature both 2025 studies rank as the most important of the seven. That is
-the honest reading of the source's own "prediction errors within 0.03 m", and it is what makes these
+the context of the source's own "prediction errors within 0.03 m", and it is what makes these
 five rows worth carrying: they are the only out-of-envelope real test this corpus has.
 
 They serve a second purpose. The source publishes the **absolute** pattern as well as the ratios, so

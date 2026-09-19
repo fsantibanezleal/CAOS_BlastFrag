@@ -1,4 +1,4 @@
-"""blastfrag: blast-fragmentation prediction from a bench pattern, with the honest statistic.
+"""blastfrag: blast-fragmentation prediction from a bench pattern, scored by variance explained.
 
 The package implements the published ladder for predicting muckpile fragment size from a
 drill-and-blast design, from the 1973 classical mean-size equation to the 2025 stacking ensemble,
@@ -32,7 +32,7 @@ Quick start::
 
 from __future__ import annotations
 
-__version__ = "0.02.000"
+__version__ = "0.02.001"
 __all__ = [
     "__version__",
     # types

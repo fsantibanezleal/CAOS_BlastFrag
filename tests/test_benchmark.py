@@ -56,7 +56,7 @@ def test_the_only_arms_that_transfer_are_the_ones_that_are_not_fitted(result):
     assert transferring["kuznetsov"] == pytest.approx(0.311, abs=0.03)
 
 
-def test_the_classical_arm_improves_under_the_honest_protocol(result):
+def test_the_classical_arm_improves_when_held_out_by_site(result):
     """It has nothing to overfit, so a harder split does not hurt it. It helps.
 
     Under a random split the classical arm scores below zero; held out by site it reaches 0.311. The
@@ -120,7 +120,7 @@ def test_a_physically_impossible_prediction_is_refused_not_scored():
     """Refitting the power law with a site held out extrapolates past ten metres.
 
     Scoring that number rather than refusing it produced a per-fold variance explained of about
-    -11000, which then swamped every honest fold pooled with it. The guard turns the failure into an
+    -11000, which then swamped every other fold pooled with it. The guard turns the failure into an
     abstention, which is both truer and more informative.
     """
     blown = []

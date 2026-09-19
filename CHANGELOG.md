@@ -2,6 +2,16 @@
 
 All notable changes to this project. Format follows Keep a Changelog; newest on top.
 
+## [0.02.001] - 2026-09-19
+
+### Changed
+
+- The package summary, the README, the module docstring, code comments, the docs wiki, a test
+  name and a test docstring no longer use the word "honest"; each passage now says what it
+  means: the statistic named (variance explained, not squared correlation), leave-one-site-out
+  (held out by site), the leakage-free protocols, the other folds of a pooled score. No behaviour
+  change.
+
 ## [0.02.000] - 2026-09-09
 
 ### Added

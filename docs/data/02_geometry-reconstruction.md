@@ -65,8 +65,8 @@ Miami publishes no diameter and no absolute dimension of any kind. Nothing fixes
 six rows are **not reconstructable**, and `reconstruct_pattern` raises rather than returning
 something. Every model that needs a rock volume abstains on those rows with a reason string.
 
-A number there would be an invention. This is the case that keeps the classical models honest, and
-it is why the package has an abstention type at all.
+A number there would be an invention. This is the case that makes the classical models abstain
+rather than invent, and it is why the package has an abstention type at all.
 
 ---
 

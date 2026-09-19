@@ -97,8 +97,8 @@ def random_split(
     """A seeded random partition, reproducing the published protocol.
 
     This one **does** leak, and deliberately: it is here so the published result can be reproduced
-    and so the gap to the honest protocols can be measured rather than asserted. The note on the
-    returned split says how many test rows share a feature vector with a training row.
+    and so the gap to the leakage-free protocols can be measured rather than asserted. The note on
+    the returned split says how many test rows share a feature vector with a training row.
     """
     rows = list(blasts)
     rng = random.Random(seed)
@@ -134,7 +134,7 @@ def deduplicated_split(
     measured size is the mean of its group. That averaging is a choice worth stating: duplicated
     inputs in this corpus carry genuinely different measured outcomes (four Soma blasts share one
     feature vector and their sizes range over 0.22 to 0.28 m), which is measurement scatter rather
-    than a modelling target, and averaging it is the honest way to keep one row per distinct design.
+    than a modelling target, and averaging it keeps one row per distinct design.
     """
     import dataclasses
 
@@ -179,9 +179,9 @@ def deduplicated_split(
 def leave_one_site_out(blasts: Sequence[Blast]) -> Iterator[Split]:
     """One split per source site, holding that whole site out.
 
-    This is the honest protocol for this corpus and the one a benchmark should lead with. Rows within
-    a campaign share a rock mass, a drilling rig, an explosive supply and a measurement operator, so
-    they are not independent draws. One quarry supplies 22 of the 97 rows.
+    This is the protocol that respects the dependence in this corpus, and the one a benchmark should
+    lead with. Rows within a campaign share a rock mass, a drilling rig, an explosive supply and a
+    measurement operator, so they are not independent draws. One quarry supplies 22 of the 97 rows.
 
     It is also the protocol that answers the question a practitioner actually has, which is not "how
     well does this model interpolate between blasts I have already measured" but "how well does it

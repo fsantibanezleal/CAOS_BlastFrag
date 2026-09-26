@@ -2,6 +2,13 @@
 
 All notable changes to this project. Format follows Keep a Changelog; newest on top.
 
+## [0.02.002] - 2026-09-26
+
+### Changed
+
+- First release published on PyPI (trusted publishing, `publish.yml`). The tag now covers what main carries:
+  the CI budget rules (ADR-0074), the archetype content guard in CI (ADR-0067) and the swept `.gitignore`.
+
 ## [0.02.001] - 2026-09-19
 
 ### Changed

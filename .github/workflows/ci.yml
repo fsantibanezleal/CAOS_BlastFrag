@@ -28,6 +28,8 @@ jobs:
         run: ruff check blastfrag tests
       - name: Tests
         run: pytest
+      - name: No em-dash and no emoji in tracked content (ADR-0067)
+        run: python scripts/check_content_standards.py
 
   core-deps:
     # The package claims a numpy-only core, and a claim in a README is not a guarantee. This job

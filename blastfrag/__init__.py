@@ -32,7 +32,7 @@ Quick start::
 
 from __future__ import annotations
 
-__version__ = "0.02.001"
+__version__ = "0.02.002"
 __all__ = [
     "__version__",
     # types

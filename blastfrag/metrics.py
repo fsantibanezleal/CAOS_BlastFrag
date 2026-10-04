@@ -24,6 +24,8 @@ __all__ = [
     "null_model_score",
     "bootstrap_interval",
     "worst_rows",
+    "quantile",
+    "summarise_draws",
 ]
 
 
@@ -59,6 +61,21 @@ class Score:
     variance statistics diverge, which is what the classical arm does on this corpus."""
 
     detail: dict = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, object]:
+        """The named figures as a plain mapping, for an artifact. ``detail`` is left out."""
+        return {
+            "n_scored": self.n_scored,
+            "n_abstained": self.n_abstained,
+            "n_extrapolated": self.n_extrapolated,
+            "pearson_r": self.pearson_r,
+            "pearson_r2": self.pearson_r2,
+            "r2_identity": self.r2_identity,
+            "rmse_m": self.rmse_m,
+            "mae_m": self.mae_m,
+            "mape_pct": self.mape_pct,
+            "bias_m": self.bias_m,
+        }
 
     def summary(self) -> str:
         """A one-line reading that cannot be mistaken for a bare ``R2``."""
@@ -249,11 +266,8 @@ def bootstrap_interval(
     if len(draws) < n_boot // 10:
         raise ValueError(f"only {len(draws)} of {n_boot} bootstrap draws were scoreable")
 
-    draws.sort()
     tail = (1.0 - level) / 2.0
-    low = draws[max(0, int(tail * len(draws)) - 1)]
-    high = draws[min(len(draws) - 1, int((1.0 - tail) * len(draws)))]
-    return point, low, high
+    return point, quantile(draws, tail), quantile(draws, 1.0 - tail)
 
 
 def worst_rows(
@@ -284,6 +298,37 @@ def worst_rows(
         )
     rows.sort(key=lambda r: -abs(float(r["error_m"])))
     return rows[:n]
+
+
+def quantile(values: Sequence[float], fraction: float) -> float:
+    """Linear-interpolation quantile of a non-empty sequence, numpy's default definition."""
+    if not values:
+        raise ValueError("a quantile of nothing is undefined")
+    if not 0.0 <= fraction <= 1.0:
+        raise ValueError(f"fraction must lie in [0, 1], got {fraction}")
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * fraction
+    low, high = math.floor(position), math.ceil(position)
+    return ordered[low] + (ordered[high] - ordered[low]) * (position - low)
+
+
+def summarise_draws(values: Sequence[float]) -> dict[str, float | int]:
+    """Spread of a statistic over repeated draws: count, 5th, 25th, 50th, 75th and 95th percentiles.
+
+    The median is the figure a repeated protocol reports; the 5th to 95th range is how far a single
+    draw can land from it.
+    """
+    if not values:
+        return {"n": 0}
+    return {
+        "n": len(values),
+        "p05": quantile(values, 0.05),
+        "p25": quantile(values, 0.25),
+        "median": quantile(values, 0.50),
+        "p75": quantile(values, 0.75),
+        "p95": quantile(values, 0.95),
+        "mean": sum(values) / len(values),
+    }
 
 
 def training_mean(blasts: Iterable[Blast]) -> float:

@@ -120,22 +120,41 @@ Averaging them would erase the disagreement, which is the interesting part.
 ### 3.2 Random forest, gradient boosting, and the stacking ensemble
 
 Reproduced with the 2025 study's final hyperparameters: 76 trees at seed 27 for the forest, a
-learning rate of 0.5 at seed 42 for the boosting, and a plain **linear** meta-learner over both,
-chosen by the source deliberately "to avoid overfitting caused by excessive complexity".
+learning rate of 0.5 at seed 42 for the boosting (the number of trees is not printed, so the library
+default of 100 is used), and a plain **linear** meta-learner over both, chosen by the source
+deliberately "to avoid overfitting caused by excessive complexity".
 
-The source also **removed cross-validation**, recording that "the cross-validated model had a poor
-prediction effect on the test set". On a 97-row corpus containing 17 rows that duplicate another
-row's feature vector, that is a symptom with a mechanism, and it is the reason this package scores
-every learned arm under three split protocols rather than one.
+The source prints a second parameter set for its single learners (forest at seed 1 with 50 trees,
+boosting at a learning rate of 1.9) and does not say unambiguously which set produced its standalone
+figures of 0.797 and 0.758. The standalone arms here use the final set, the same learners the stacked
+model contains, so their scores are not exact reproductions of those two figures and are not
+presented as such.
+
+**Cross-validation was cancelled while the stacked model was built.** The source, in the paragraph
+describing that construction: "the first attempt was to use cross-validation to increase the
+generalization ability of the model, but the cross-validated model had a poor prediction effect on the
+test set, and the stacking fusion model itself could effectively improve the residuals, thus canceling
+the cross-validation". In a stacked model the cross-validation that can be cancelled is the
+out-of-fold scheme that produces the meta-learner's training inputs (Wolpert 1992,
+`doi:10.1016/S0893-6080(05)80023-1`, introduces stacking with exactly that out-of-fold step), so since
+0.3.0 the meta-learner is fitted on the base learners' **in-sample** predictions. That reading is this
+package's; the source does not spell out the mechanism. Before 0.3.0 the arm used scikit-learn's
+out-of-fold stacking with two folds, which is a different method.
+
+Fitted on the full corpus this way, the meta-learner's weights are **1.02 on the boosting learner and
+-0.02 on the forest**: the boosting learner fits its training rows almost exactly, so a meta-learner
+trained on those rows trusts it almost entirely, and the stacked model behaves like its boosting
+learner under every protocol.
 
 The boosting arm's overfitting is reproduced rather than tuned away: its training fit exceeds 0.98
-while its hold-out fit is materially lower, exactly as the source describes.
+while its hold-out fit is materially lower, as the source describes.
 
 ## 4. And then the protocol
 
-On the published hold-out the learned arms beat the classical one comfortably. Held out by whole
-site, **every one of them has negative variance explained**, and the two arms that survive are the
-two whose coefficients are not fitted at all.
+On the published hold-out, whose blasts come from the same sites as the training rows, the learned
+arms beat the classical one comfortably. Held out by whole site, every learned arm loses between 0.74
+and 4.94 of variance explained against its median random draw, and the best of them lands within a
+few hundredths of zero. That is the subject of [the protocol-sensitivity benchmark](05_protocol-sensitivity.md).
 
-That is the subject of [the protocol-sensitivity benchmark](05_protocol-sensitivity.md), and it is
-the reason this chapter is not the end of the book.
+The learned arms can be run outside Python: [the portable export](../data/03_portable-export.md)
+writes each fitted arm as JSON that a browser walks exactly.

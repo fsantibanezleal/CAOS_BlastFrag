@@ -287,6 +287,45 @@ def test_the_stacking_arm_carries_its_sources_removed_cross_validation():
     assert "protocol" in StackingEnsemble.__doc__
 
 
+def test_the_stacking_meta_learner_is_trained_on_in_sample_predictions(train):
+    """The source cancelled cross-validation while building the stacked model.
+
+    Releases before 0.3.0 used scikit-learn's out-of-fold stacking (cv=2), a different method. The
+    meta-learner here must be exactly the least-squares line through the base learners' IN-SAMPLE
+    predictions, which this test refits independently and compares.
+    """
+    import numpy as np
+    from sklearn.linear_model import LinearRegression
+
+    arm = StackingEnsemble().fit(train)
+    stack = arm.model
+    X = np.array([arm._standardise(b.features()) for b in train])
+    y = np.array([b.x50_m for b in train])
+    base = np.column_stack([stack.forest.predict(X), stack.boosting.predict(X)])
+    reference = LinearRegression().fit(base, y)
+    assert np.allclose(stack.meta.coef_, reference.coef_, rtol=1e-10, atol=1e-12)
+    assert stack.meta.intercept_ == pytest.approx(reference.intercept_, rel=1e-10)
+    # And it predicts through all three parts, in that order.
+    assert np.allclose(stack.predict(X), reference.predict(base))
+
+
+def test_trained_in_sample_the_stack_is_its_boosting_learner(train):
+    """The boosting learner fits its training rows almost exactly, so a meta-learner trained on
+    in-sample predictions gives it nearly all the weight. Measured on the full corpus: 1.02 on
+    boosting, -0.02 on the forest. The published stacked model is, in effect, its boosting learner,
+    which is why the two score alike under every protocol."""
+    meta = StackingEnsemble().fit(train).model.meta
+    forest_weight, boosting_weight = meta.coef_
+    assert boosting_weight == pytest.approx(1.02, abs=0.02)
+    assert abs(forest_weight) < 0.05
+
+
+def test_the_stacking_base_learners_use_the_final_published_parameters(train):
+    stack = StackingEnsemble().fit(train).model
+    assert (stack.forest.n_estimators, stack.forest.random_state) == (76, 27)
+    assert (stack.boosting.learning_rate, stack.boosting.random_state) == (0.5, 42)
+
+
 def test_every_learned_arm_refuses_to_fit_on_too_few_rows(train):
     for arm in (RandomForest(), GradientBoosting(), SupportVectorRegression()):
         with pytest.raises(ValueError, match="at least 10 measured blasts"):

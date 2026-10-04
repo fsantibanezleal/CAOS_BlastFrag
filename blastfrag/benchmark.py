@@ -2,11 +2,28 @@
 
 This is the module the whole package exists to support. The 2025 state of the art on this corpus
 reports its headline from a random 80/20 split of 97 rows, 17 of which duplicate another row's
-feature vector. Nothing in the literature reports what happens under a split that does not leak.
+feature vector. Nothing in the literature reports what happens under a split that holds out whole
+sites.
 
 Running all three protocols and publishing the gap is the contribution. **Either sign of the gap is
 a result**, and the kill criterion is declared before the run: if leave-one-site-out does not put the
 best learned arm meaningfully above a constant predictor, that is what gets reported, in those words.
+
+What 0.3.0 changed, and why. An adversarial re-run of 0.2.2 found four ways in which the reported
+effects depended on the evaluation design rather than on the models, and each now has a mechanism
+here:
+
+1. The random protocols were one draw of about 19 test rows. They are now repeated (100 draws by
+   default) and every arm carries its spread; the protocol gap is computed from the median.
+2. Under leave-one-site-out the classical arms abstain on the one site with no hole diameter, so they
+   were scored on fewer rows than the fitted arms. Every grouped score is now reported on two
+   supports: every blast, and the blasts with resolvable geometry. The criterion is evaluated on both,
+   and a verdict that differs between them is reported as depending on the row set.
+3. No headline figure carried an interval. Grouped scores now carry a site-resampled 95 percent
+   interval, because the site, not the blast, is the independent unit.
+4. Arms whose coefficients were fitted on the corpus itself were listed among the arms that transfer.
+   Every arm now declares what it was fitted on (:meth:`Arm.provenance`) and in-sample arms are
+   reported separately.
 """
 
 from __future__ import annotations
@@ -14,9 +31,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
-from .metrics import Score, score, training_mean
+from .geometry import has_absolute_geometry
+from .metrics import Score, bootstrap_interval, score, summarise_draws, training_mean
 from .models import Arm, NullModel
-from .splits import Split, all_protocols
+from .splits import REPEATED_PROTOCOLS, Split, all_protocols
 from .types import Blast, Prediction
 
 __all__ = [
@@ -25,7 +43,10 @@ __all__ = [
     "BenchmarkResult",
     "run_benchmark",
     "run_fixed_holdout",
+    "default_arms",
     "KILL_CRITERION",
+    "SUPPORTS",
+    "PUBLISHED_RANDOM_SPLIT_R2",
 ]
 
 KILL_CRITERION = (
@@ -41,14 +62,47 @@ because it is the failure mode the criterion exists to prevent. As first written
 for a margin over the null. The run then produced a best learned arm at -0.034 against a null at
 -0.216, and the rule declared that the learned tier generalises. It does not: an arm with negative
 variance explained is worse than predicting a constant, and it had simply failed less badly than a
-constant fitted to a different mix of sites. A gate that can pass on two failures is not measuring
-its own subject.
+constant fitted to a different mix of sites.
+
+The text has not changed since. 0.3.0 changes what is reported BESIDE it (two supports, intervals),
+not the rule, because editing a declared criterion after seeing the data is the failure it guards.
 """
+
+SUPPORTS: dict[str, Callable[[Blast], bool]] = {
+    "all": lambda blast: True,
+    "geometry": has_absolute_geometry,
+}
+"""The two row sets every grouped score is reported on.
+
+``all`` is every blast. ``geometry`` is the blasts whose pattern geometry is resolvable, which are the
+only rows on which the classical arms can answer; on this corpus that removes the six Miami blasts.
+Comparing a classical score over 91 rows with a fitted score over 97 is comparing different
+denominators, and on this corpus that difference decides the verdict.
+"""
+
+PUBLISHED_RANDOM_SPLIT_R2: dict[str, float] = {
+    "stacking": 0.943,
+    "svr-poly": 0.578,
+}
+"""Test-set figures Sui et al. 2025 (doi:10.3390/app15031254) report from one random 80/20 split of
+these 97 blasts, for the two arms whose parameters the source states without ambiguity. Each is
+placed within this package's own distribution of draws of the same protocol, so a reader can see
+whether it is a typical draw or a favourable one.
+
+The source also reports 0.797 for its random forest and 0.758 for XGBoost, but it prints two
+parameter sets for those learners and does not say unambiguously which produced the figures, so
+placing them in a distribution of draws made with one of the sets would compare unlike things."""
 
 
 @dataclass(frozen=True, slots=True)
 class ArmResult:
-    """One arm's score under one protocol, with the abstentions it declared."""
+    """One arm's score under one protocol, with the abstentions it declared.
+
+    For a repeated protocol ``score`` is the first draw (the seed the caller passed, which reproduces
+    a single published split) and ``detail["repeats"]`` is the spread over every draw. For
+    leave-one-site-out ``score`` is the pooled score over every blast and ``detail["supports"]``,
+    ``detail["per_site"]`` and ``detail["predictions"]`` carry the rest.
+    """
 
     arm: str
     tier: str
@@ -56,6 +110,13 @@ class ArmResult:
     score: Score
     n_folds: int = 1
     detail: dict = field(default_factory=dict)
+
+    def headline_r2(self) -> float | None:
+        """The figure a reader should quote: the median draw for a repeated protocol, else the score."""
+        repeats = self.detail.get("repeats")
+        if repeats and repeats.get("n"):
+            return float(repeats["median"])
+        return self.score.r2_identity
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +126,7 @@ class ProtocolResult:
     protocol: str
     n_folds: int
     arms: tuple[ArmResult, ...]
+    repeated: bool = False
 
     def by_arm(self) -> dict[str, ArmResult]:
         return {r.arm: r for r in self.arms}
@@ -73,11 +135,11 @@ class ProtocolResult:
         candidates = [
             r
             for r in self.arms
-            if r.score.r2_identity is not None
+            if r.headline_r2() is not None
             and r.tier not in {"control"}
             and (tier is None or r.tier == tier)
         ]
-        return max(candidates, key=lambda r: r.score.r2_identity) if candidates else None
+        return max(candidates, key=lambda r: r.headline_r2()) if candidates else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +149,8 @@ class BenchmarkResult:
     protocols: tuple[ProtocolResult, ...]
     verdict: dict[str, object]
     dataset_digest: str
+    provenance: dict[str, dict] = field(default_factory=dict)
+    n_repeats: int = 1
 
     def by_protocol(self) -> dict[str, ProtocolResult]:
         return {p.protocol: p for p in self.protocols}
@@ -102,180 +166,453 @@ class BenchmarkResult:
                         "tier": result.tier,
                         "protocol": result.protocol,
                         "n_folds": result.n_folds,
-                        "n_scored": result.score.n_scored,
-                        "n_abstained": result.score.n_abstained,
-                        "r2_identity": result.score.r2_identity,
-                        "pearson_r2": result.score.pearson_r2,
-                        "rmse_m": result.score.rmse_m,
-                        "mae_m": result.score.mae_m,
-                        "mape_pct": result.score.mape_pct,
-                        "bias_m": result.score.bias_m,
+                        "headline_r2_identity": result.headline_r2(),
+                        **result.score.as_dict(),
                     }
                 )
         return rows
 
 
-def _pooled(
-    arm_factory: Callable[[], Arm], splits: Sequence[Split], protocol: str
-) -> tuple[Score, int]:
-    """Fit and predict over every fold, then score the pooled out-of-fold predictions.
+# ---------------------------------------------------------------------------------------------
+# Fitting and predicting one split
+# ---------------------------------------------------------------------------------------------
+
+def _fit_predict(
+    factory: Callable[[], Arm], split: Split
+) -> tuple[list[Blast], list[Prediction]]:
+    """Fit a fresh arm on a split's training rows and predict its test rows.
+
+    An arm that cannot be fitted on the split abstains on every test row with the reason, so a hole
+    in a table is always explained.
+    """
+    arm = factory()
+    try:
+        arm.fit(split.train)
+    except ValueError as exc:
+        return list(split.test), [
+            Prediction(
+                method=arm.name,
+                blast_id=blast.blast_id,
+                x50_m=None,
+                abstain_reason=f"could not fit on the {split.protocol} training rows: {exc}",
+            )
+            for blast in split.test
+        ]
+    return list(split.test), arm.predict(split.test)
+
+
+def _score_repeated(
+    name: str, factory: Callable[[], Arm], splits: Sequence[Split], protocol: str
+) -> ArmResult:
+    """Score every draw on its own and report the spread; the first draw is the headline score."""
+    tier = factory().tier
+    first: Score | None = None
+    r2: list[float] = []
+    rmse: list[float] = []
+    for split in splits:
+        tested, predictions = _fit_predict(factory, split)
+        result = score(tested, predictions, method=name)
+        if first is None:
+            first = result
+        if result.r2_identity is not None:
+            r2.append(result.r2_identity)
+        if result.rmse_m is not None:
+            rmse.append(result.rmse_m)
+    assert first is not None
+    return ArmResult(
+        arm=name,
+        tier=tier,
+        protocol=protocol,
+        score=first,
+        n_folds=len(splits),
+        detail={
+            "seeds": [s.seed for s in splits],
+            "repeats": summarise_draws(r2),
+            "rmse_repeats": summarise_draws(rmse),
+            "draws_r2_identity": r2,
+        },
+    )
+
+
+def _per_site(tested: Sequence[Blast], predictions: Sequence[Prediction]) -> dict[str, dict]:
+    """Error on each held-out site, which is where a transfer failure has a name."""
+    by_id = {p.blast_id: p for p in predictions}
+    out: dict[str, dict] = {}
+    for site in sorted({b.site for b in tested}):
+        rows = [b for b in tested if b.site == site and b.x50_m is not None]
+        pairs = [
+            (b.x50_m, by_id[b.blast_id].x50_m)
+            for b in rows
+            if by_id[b.blast_id].x50_m is not None
+        ]
+        entry: dict[str, object] = {
+            "n_blasts": len(rows),
+            "n_scored": len(pairs),
+            "mean_measured_m": sum(b.x50_m for b in rows) / len(rows) if rows else None,
+        }
+        if pairs:
+            errors = [p - m for m, p in pairs]  # type: ignore[operator]
+            entry.update(
+                {
+                    "mean_predicted_m": sum(p for _, p in pairs) / len(pairs),  # type: ignore[misc]
+                    "rmse_m": (sum(e * e for e in errors) / len(errors)) ** 0.5,
+                    "mae_m": sum(abs(e) for e in errors) / len(errors),
+                    "bias_m": sum(errors) / len(errors),
+                }
+            )
+        else:
+            entry["abstain_reason"] = next(
+                (by_id[b.blast_id].abstain_reason for b in rows if by_id[b.blast_id].abstained),
+                None,
+            )
+        out[site] = entry
+    return out
+
+
+def _score_grouped(
+    name: str,
+    factory: Callable[[], Arm],
+    splits: Sequence[Split],
+    protocol: str,
+    *,
+    n_boot: int,
+    boot_seed: int,
+) -> ArmResult:
+    """Pool the out-of-fold predictions, then score them on each support with a site interval.
 
     Pooling rather than averaging per-fold scores is deliberate. A leave-one-site-out sweep has folds
     from 6 to 22 rows, and averaging their scores would weight a six-row site the same as a
     twenty-two-row one. Pooling scores every blast exactly once, on the fold where it was held out.
     """
+    tier = factory().tier
     tested: list[Blast] = []
     predictions: list[Prediction] = []
     for split in splits:
-        arm = arm_factory()
-        try:
-            arm.fit(split.train)
-        except ValueError as exc:
-            # An arm that cannot be fitted on this fold abstains for the fold, with the reason.
-            for blast in split.test:
-                tested.append(blast)
-                predictions.append(
-                    Prediction(
-                        method=arm.name,
-                        blast_id=blast.blast_id,
-                        x50_m=None,
-                        abstain_reason=f"could not fit on the {split.protocol} training rows: {exc}",
-                    )
-                )
-            continue
-        tested.extend(split.test)
-        predictions.extend(arm.predict(split.test))
-    return score(tested, predictions, method=arm_factory().name), len(splits)
+        t, p = _fit_predict(factory, split)
+        tested.extend(t)
+        predictions.extend(p)
 
+    by_id = {p.blast_id: p for p in predictions}
+    supports: dict[str, dict] = {}
+    headline: Score | None = None
+    for support, keep in SUPPORTS.items():
+        rows = [b for b in tested if keep(b)]
+        preds = [by_id[b.blast_id] for b in rows]
+        result = score(rows, preds, method=name)
+        if support == "all":
+            headline = result
+        interval: list[float] | None = None
+        if n_boot > 0 and result.r2_identity is not None:
+            try:
+                _point, low, high = bootstrap_interval(
+                    rows, preds, unit="site", n_boot=n_boot, seed=boot_seed
+                )
+                interval = [low, high]
+            except ValueError:
+                interval = None
+        supports[support] = {
+            "score": result.as_dict(),
+            "interval_95": interval,
+            "n_sites": len({b.site for b in rows if not by_id[b.blast_id].abstained}),
+        }
+    assert headline is not None
+    return ArmResult(
+        arm=name,
+        tier=tier,
+        protocol=protocol,
+        score=headline,
+        n_folds=len(splits),
+        detail={
+            "supports": supports,
+            "per_site": _per_site(tested, predictions),
+            "predictions": {
+                p.blast_id: p.x50_m for p in predictions
+            },
+        },
+    )
+
+
+# ---------------------------------------------------------------------------------------------
+# The run
+# ---------------------------------------------------------------------------------------------
 
 def run_benchmark(
     blasts: Sequence[Blast],
     arms: dict[str, Callable[[], Arm]],
     *,
     seed: int = 0,
+    n_repeats: int = 100,
+    n_boot: int = 2000,
+    boot_seed: int = 0,
 ) -> BenchmarkResult:
     """Score every arm under every protocol on the same corpus.
 
     ``arms`` maps a name to a **factory**, not an instance, because each fold needs a freshly
     initialised model. Reusing one instance across folds would let a fold's fit leak into the next.
+
+    ``n_repeats`` draws of each random protocol are scored one by one, seeds ``seed`` onward;
+    ``n_boot`` site resamples give the grouped intervals (0 skips them). On the default device the
+    default run takes about four minutes, almost all of it the published network's
+    Levenberg-Marquardt training.
     """
     from .datasets import compute_dataset_digest
 
-    protocols = all_protocols(blasts, seed=seed)
+    protocols = all_protocols(blasts, seed=seed, n_repeats=n_repeats)
     results: list[ProtocolResult] = []
-
     for protocol_name, splits in protocols.items():
-        arm_results: list[ArmResult] = []
-        for name, factory in arms.items():
-            pooled, n_folds = _pooled(factory, splits, protocol_name)
-            arm_results.append(
-                ArmResult(
-                    arm=name,
-                    tier=factory().tier,
-                    protocol=protocol_name,
-                    score=pooled,
-                    n_folds=n_folds,
-                    detail={"seed": seed},
-                )
+        repeated = protocol_name in REPEATED_PROTOCOLS
+        arm_results = [
+            _score_repeated(name, factory, splits, protocol_name)
+            if repeated
+            else _score_grouped(
+                name, factory, splits, protocol_name, n_boot=n_boot, boot_seed=boot_seed
             )
+            for name, factory in arms.items()
+        ]
         results.append(
             ProtocolResult(
-                protocol=protocol_name, n_folds=len(splits), arms=tuple(arm_results)
+                protocol=protocol_name,
+                n_folds=len(splits),
+                arms=tuple(arm_results),
+                repeated=repeated,
             )
         )
 
+    provenance: dict[str, dict] = {}
+    for name, factory in arms.items():
+        arm = factory()
+        provenance[name] = {
+            "tier": arm.tier,
+            "lane": arm.lane,
+            "source": arm.source,
+            "shares_mean_size_with": arm.shares_mean_size_with,
+            **arm.provenance(),
+        }
+
     return BenchmarkResult(
         protocols=tuple(results),
-        verdict=_verdict(results),
+        verdict=_verdict(results, provenance, blasts),
         dataset_digest=compute_dataset_digest(blasts),
+        provenance=provenance,
+        n_repeats=n_repeats,
     )
 
 
-def _verdict(results: Sequence[ProtocolResult]) -> dict[str, object]:
-    """Apply the declared kill criterion, and measure the protocol gap."""
+# ---------------------------------------------------------------------------------------------
+# The verdict
+# ---------------------------------------------------------------------------------------------
+
+def _criterion_on(grouped: ProtocolResult, support: str) -> dict[str, object] | None:
+    """Apply the declared kill criterion to one support of the grouped protocol."""
+
+    def r2(result: ArmResult) -> float | None:
+        return result.detail["supports"][support]["score"]["r2_identity"]
+
+    learned = [r for r in grouped.arms if r.tier == "learned" and r2(r) is not None]
+    null = next((r for r in grouped.arms if r.arm == "null"), None)
+    if not learned or null is None or r2(null) is None:
+        return None
+    best = max(learned, key=lambda r: r2(r))  # type: ignore[arg-type, return-value]
+    best_r2 = float(r2(best))  # type: ignore[arg-type]
+    null_r2 = float(r2(null))  # type: ignore[arg-type]
+    margin = best_r2 - null_r2
+    positive = best_r2 > 0.0
+    return {
+        "n_blasts": best.detail["supports"][support]["score"]["n_scored"]
+        + best.detail["supports"][support]["score"]["n_abstained"],
+        "best_learned_arm": best.arm,
+        "best_learned_r2_identity": best_r2,
+        "best_learned_interval_95": best.detail["supports"][support]["interval_95"],
+        "null_r2_identity": null_r2,
+        "null_pearson_r": null.detail["supports"][support]["score"]["pearson_r"],
+        "margin_over_null": margin,
+        "best_learned_is_positive": positive,
+        "n_learned_arms_positive": sum(1 for r in learned if (r2(r) or 0.0) > 0.0),
+        "n_learned_arms": len(learned),
+        "generalises_across_sites": positive and margin >= 0.10,
+    }
+
+
+def _verdict(
+    results: Sequence[ProtocolResult],
+    provenance: dict[str, dict],
+    blasts: Sequence[Blast],
+) -> dict[str, object]:
+    """Apply the declared kill criterion on both supports, and measure the protocol gap."""
     by_protocol = {p.protocol: p for p in results}
     grouped = by_protocol.get("leave-one-site-out")
-    random_draw = by_protocol.get("random-8020")
-
     verdict: dict[str, object] = {"criterion": KILL_CRITERION}
     if grouped is None:
         verdict["outcome"] = "not evaluated: no leave-one-site-out protocol was run"
         return verdict
 
-    learned = [
-        r for r in grouped.arms if r.tier == "learned" and r.score.r2_identity is not None
-    ]
-    null = next((r for r in grouped.arms if r.arm == "null"), None)
-    if not learned or null is None or null.score.r2_identity is None:
+    on = {support: _criterion_on(grouped, support) for support in SUPPORTS}
+    if on["all"] is None:
         verdict["outcome"] = "not evaluated: the learned tier or the null model did not score"
         return verdict
+    verdict["supports"] = on
+    # The top-level fields are the "all" support: that is the row set the criterion was first applied
+    # to, and keeping it there keeps the record continuous across releases.
+    verdict.update({k: v for k, v in on["all"].items() if k != "n_blasts"})
 
-    best = max(learned, key=lambda r: r.score.r2_identity)
-    margin = best.score.r2_identity - null.score.r2_identity
-    positive = best.score.r2_identity > 0.0
-    generalises = positive and margin >= 0.10
-
-    if generalises:
-        outcome = (
-            f"the learned tier generalises across sites: {best.arm} explains "
-            f"{best.score.r2_identity:.3f} of the variance and exceeds a constant predictor by "
-            f"{margin:.3f}"
-        )
-    elif not positive:
-        outcome = (
-            "THE LEARNED TIER DOES NOT GENERALISE ACROSS SITES. Every learned arm has NEGATIVE "
-            f"variance explained under leave-one-site-out; the best of them, {best.arm}, scores "
-            f"{best.score.r2_identity:.3f}, which is worse than predicting a constant. Its "
-            f"{margin:.3f} margin over the null is two models failing by different amounts, not "
-            "skill."
-        )
-    else:
-        outcome = (
-            "THE LEARNED TIER DOES NOT GENERALISE ACROSS SITES: the best learned arm, "
-            f"{best.arm}, exceeds a constant predictor by only {margin:.3f} in variance explained "
-            "under leave-one-site-out"
-        )
-
-    verdict.update(
-        {
-            "best_learned_arm": best.arm,
-            "best_learned_r2_identity": best.score.r2_identity,
-            "null_r2_identity": null.score.r2_identity,
-            "margin_over_null": margin,
-            "best_learned_is_positive": positive,
-            "n_learned_arms_positive": sum(1 for r in learned if r.score.r2_identity > 0.0),
-            "n_learned_arms": len(learned),
-            "generalises_across_sites": generalises,
-            "outcome": outcome,
-        }
+    depends = on["geometry"] is not None and (
+        on["geometry"]["generalises_across_sites"] != on["all"]["generalises_across_sites"]
+    )
+    verdict["depends_on_support"] = depends
+    verdict["sites_outside_geometry_support"] = sorted(
+        {b.site for b in blasts if not SUPPORTS["geometry"](b)}
     )
 
-    # Which arms DO transfer, if any. On this corpus the answer is the two arms whose coefficients
-    # are fixed rather than fitted, which is the finding.
-    transferring = sorted(
+    # Which arms, other than in-sample ones, keep a positive score on an unseen site; which arms are
+    # in sample and why; and which arms have an interval that clears zero at all.
+    arms = grouped.by_arm()
+    in_sample = sorted(n for n, p in provenance.items() if p.get("in_sample_corpus"))
+    site_constant = sorted(n for n, p in provenance.items() if p.get("uses_site_constant"))
+    verdict["in_sample_arms"] = [
+        [name, arms[name].score.r2_identity, provenance[name]["fitted_on"]]
+        for name in in_sample
+        if name in arms and arms[name].score.r2_identity is not None
+    ]
+    verdict["site_constant_arms"] = site_constant
+    verdict["arms_with_positive_variance_explained_across_sites"] = sorted(
         (
-            (r.arm, r.score.r2_identity)
+            [r.arm, r.score.r2_identity]
             for r in grouped.arms
-            if r.tier not in {"control"} and r.score.r2_identity is not None and r.score.r2_identity > 0
+            if r.tier != "control"
+            and r.arm not in in_sample
+            and r.score.r2_identity is not None
+            and r.score.r2_identity > 0
         ),
         key=lambda pair: -pair[1],
     )
-    verdict["arms_with_positive_variance_explained_across_sites"] = transferring
+    intervals = {
+        r.arm: {s: r.detail["supports"][s]["interval_95"] for s in SUPPORTS}
+        for r in grouped.arms
+        if r.tier != "control"
+    }
+    verdict["intervals_95"] = intervals
+    verdict["arms_with_interval_above_zero"] = sorted(
+        arm
+        for arm, by_support in intervals.items()
+        if arm not in in_sample
+        and any(iv is not None and iv[0] > 0 for iv in by_support.values())
+    )
 
+    # The protocol gap, from the median random draw, so one lucky or unlucky split cannot set it.
+    random_draw = by_protocol.get("random-8020")
+    dedup_draw = by_protocol.get("dedup-random")
     if random_draw is not None:
         random_arms = random_draw.by_arm()
         gaps = {
-            r.arm: (random_arms[r.arm].score.r2_identity - r.score.r2_identity)
+            r.arm: random_arms[r.arm].headline_r2() - r.score.r2_identity
             for r in grouped.arms
             if r.arm in random_arms
             and r.score.r2_identity is not None
-            and random_arms[r.arm].score.r2_identity is not None
+            and random_arms[r.arm].headline_r2() is not None
         }
         verdict["protocol_gap_random_minus_grouped"] = gaps
-        if gaps:
-            verdict["median_protocol_gap"] = sorted(gaps.values())[len(gaps) // 2]
+        verdict["protocol_gap_basis"] = (
+            f"median of {random_draw.n_folds} random 80/20 draws minus the pooled "
+            "leave-one-site-out score over every blast"
+        )
+        learned_gaps = sorted(
+            gap for arm, gap in gaps.items() if arms[arm].tier == "learned"
+        )
+        if learned_gaps:
+            mid = len(learned_gaps) // 2
+            verdict["median_protocol_gap"] = (
+                learned_gaps[mid]
+                if len(learned_gaps) % 2
+                else 0.5 * (learned_gaps[mid - 1] + learned_gaps[mid])
+            )
+            verdict["median_protocol_gap_over"] = "the learned arms"
+        if dedup_draw is not None:
+            dedup_arms = dedup_draw.by_arm()
+            verdict["dedup_minus_random_median"] = {
+                arm: dedup_arms[arm].headline_r2() - random_arms[arm].headline_r2()
+                for arm in random_arms
+                if arm in dedup_arms
+                and arms.get(arm) is not None
+                and arms[arm].tier != "control"
+                and dedup_arms[arm].headline_r2() is not None
+                and random_arms[arm].headline_r2() is not None
+            }
+        published: dict[str, dict] = {}
+        for arm, value in PUBLISHED_RANDOM_SPLIT_R2.items():
+            draws = random_arms.get(arm)
+            values = draws.detail.get("draws_r2_identity") if draws is not None else None
+            if values:
+                published[arm] = {
+                    "published": value,
+                    "share_of_draws_below": sum(1 for v in values if v < value) / len(values),
+                    "median_draw": draws.headline_r2(),
+                }
+        verdict["published_random_split_figures"] = published
+
+    verdict["outcome"] = _outcome(on, depends, verdict)
     return verdict
 
+
+def _outcome(on: dict, depends: bool, verdict: dict) -> str:
+    """One canonical English sentence group, composed from the structured fields."""
+    all_ = on["all"]
+    geo = on["geometry"]
+    parts: list[str] = []
+    if depends and geo is not None:
+        parts.append(
+            "THE VERDICT DEPENDS ON THE ROW SET. "
+            f"Over all {all_['n_blasts']} blasts the best learned arm under leave-one-site-out, "
+            f"{all_['best_learned_arm']}, scores {all_['best_learned_r2_identity']:.3f} and the "
+            "learned tier "
+            + ("meets" if all_["generalises_across_sites"] else "does not meet")
+            + f" the criterion. Over the {geo['n_blasts']} blasts whose pattern geometry is "
+            "resolvable, the rows on which the classical arms are also scored, "
+            f"{geo['best_learned_arm']} scores {geo['best_learned_r2_identity']:.3f}, "
+            f"{geo['margin_over_null']:.3f} above the null, and the tier "
+            + ("meets" if geo["generalises_across_sites"] else "does not meet")
+            + " it. The blasts that separate the two row sets come from "
+            + ", ".join(verdict["sites_outside_geometry_support"])
+            + "."
+        )
+    elif all_["generalises_across_sites"]:
+        parts.append(
+            f"The learned tier generalises across sites: {all_['best_learned_arm']} explains "
+            f"{all_['best_learned_r2_identity']:.3f} of the variance and exceeds a constant "
+            f"predictor by {all_['margin_over_null']:.3f}."
+        )
+    elif not all_["best_learned_is_positive"]:
+        parts.append(
+            "THE LEARNED TIER DOES NOT GENERALISE ACROSS SITES. Every learned arm has NEGATIVE "
+            f"variance explained under leave-one-site-out; the best of them, "
+            f"{all_['best_learned_arm']}, scores {all_['best_learned_r2_identity']:.3f}, which is "
+            f"worse than predicting a constant. Its {all_['margin_over_null']:.3f} margin over the "
+            "null is two models failing by different amounts, not skill."
+        )
+    else:
+        parts.append(
+            "THE LEARNED TIER DOES NOT GENERALISE ACROSS SITES: the best learned arm, "
+            f"{all_['best_learned_arm']}, exceeds a constant predictor by only "
+            f"{all_['margin_over_null']:.3f} in variance explained under leave-one-site-out."
+        )
+
+    if not verdict.get("arms_with_interval_above_zero"):
+        parts.append(
+            "Apart from arms whose source fitted them on this corpus, no arm has a site-resampled 95 "
+            "percent interval above zero: with ten sites, none of them is distinguishable from "
+            "predicting the corpus mean."
+        )
+    if all_.get("null_pearson_r") is not None and all_["null_pearson_r"] < 0:
+        parts.append(
+            f"The null's held-out predictions correlate with the measurements at "
+            f"{all_['null_pearson_r']:.2f}: holding out a coarse site lowers the training mean, so "
+            "any margin over the null under this protocol is larger than the skill it measures."
+        )
+    return " ".join(parts)
+
+
+# ---------------------------------------------------------------------------------------------
+# Fixed published hold-outs
+# ---------------------------------------------------------------------------------------------
 
 def run_fixed_holdout(
     train: Sequence[Blast],
@@ -286,6 +623,12 @@ def run_fixed_holdout(
 
     Used for the two published validation sets. The null model is fitted on the training rows, as it
     must be: a null fitted on the hold-out would be using the answer.
+
+    Two cautions travel with the result. The published regression and the router were fitted by
+    their source on ``train`` when ``train`` is the 97-blast corpus, so on these hold-outs they are
+    genuinely out of sample. The classical arm's rock factors were back-solved from the published
+    classical predictions for these same hold-out blasts, so its agreement with that published
+    column is circular here; only the within-site constancy of the factors is evidence.
     """
     results: list[ArmResult] = []
     for name, factory in arms.items():
@@ -327,10 +670,15 @@ def run_fixed_holdout(
 
 
 def default_arms(*, include_learned: bool = True) -> dict[str, Callable[[], Arm]]:
-    """The ladder as the benchmark runs it, controls first."""
+    """The ladder as the benchmark runs it, controls first.
+
+    One predictor per distinct mean size: Kuz-Ram, Swebrec and the crush-zone composition return the
+    classical mean size and differ only in curve shape, so they are not benchmarked separately.
+    """
     from .models import (
         GroupDiscriminant,
         Kuznetsov,
+        KuznetsovTransfer,
         Oracle,
         PublishedRegression,
         RefittedRegression,
@@ -340,6 +688,7 @@ def default_arms(*, include_learned: bool = True) -> dict[str, Callable[[], Arm]
         "null": NullModel,
         "oracle": Oracle,
         "kuznetsov": Kuznetsov,
+        "kuznetsov-transfer": KuznetsovTransfer,
         "group-discriminant": GroupDiscriminant,
         "published-regression": PublishedRegression,
         "refitted-regression": RefittedRegression,

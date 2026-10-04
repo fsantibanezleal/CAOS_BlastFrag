@@ -3,35 +3,44 @@
 The prediction ladder. Each page derives its models term by term from a primary source, states where
 the model fails, and records anything the source did not print.
 
-1. [The classical rung](methods/01_classical.md), mean size, uniformity and the distributions.
-2. [The rock factor](methods/03_rock-factor.md), three published schemes that disagree, and a fourth
+1. [The classical rung](methods/01_classical.md), the mean-size equation and the uniformity index.
+2. [Distributions](methods/02_distributions.md), Rosin-Rammler, Swebrec and the crush-zone
+   composition: shapes around the classical mean size that no held dataset validates.
+3. [The rock factor](methods/03_rock-factor.md), three published schemes that disagree, and a fourth
    recovered from the data.
-3. [The statistical rung](methods/04_statistical.md), the group router and the two published
+4. [The statistical rung](methods/04_statistical.md), the group router and the two published
    regressions.
-4. [The learned rung](methods/06_learned.md), the published network reproduced, and what happened.
 5. [The protocol-sensitivity benchmark](methods/05_protocol-sensitivity.md), **start here**: the
    result the package exists to produce.
+6. [The learned rung](methods/06_learned.md), the published network reproduced, and what happened.
+7. [The transfer rung](methods/07_transfer.md), the classical equation with a rock factor that uses
+   nothing from the target site.
+8. [Diagnostics](methods/08_diagnostics.md), the outlier screen and two views of feature importance.
 
 ## The ladder at a glance
 
-Transfer is variance explained about the identity line under leave-one-site-out.
+Held out by site: variance explained about the identity line under leave-one-site-out, over every
+blast, with the site-resampled 95 percent interval. Random: the median of 100 random 80/20 draws.
 
-| Rung | Tier | Lane | Transfers to an unseen site? |
-|---|---|---|---|
-| null, predict the training mean | control | live | by construction, no |
-| oracle, return the measurement | control | offline | by construction, yes |
-| classical mean size | classical | live | **yes, 0.311** |
-| Rosin-Rammler distribution | classical | live | shape only |
-| Swebrec distribution | classical | live | shape only |
-| crush-zone composition | semi-mechanistic | live | shape only |
-| rock-factor schemes | classical | live | an input, not a predictor |
-| group router | statistical | live | exact on all 109 labelled blasts |
-| published regression | statistical | live | **yes, 0.802** |
-| refitted regression | statistical | live | no, -4.075 |
-| published neural network | learned | offline train, live infer | no, -0.626 |
-| support vector regression | learned | offline train, live infer | no |
-| random forest and gradient boosting | learned | offline train, live infer | no |
-| stacking ensemble | learned | offline train, live infer | no, -0.951 |
+| Rung | Tier | Fitted on | Random | Held out by site |
+|---|---|---|---|---|
+| null, predict the training mean | control | training rows | -0.036 | -0.216 (-1.28 to -0.15) |
+| oracle, return the measurement | control | the measurement | 1.000 | 1.000 |
+| classical mean size, site factor | classical | a factor recovered from the site's own published predictions | 0.303 | 0.311 (-0.96 to 0.70) |
+| classical mean size, transfer factor | classical | training sites only | 0.312 | 0.298 (-1.10 to 0.72) |
+| Rosin-Rammler, Swebrec, crush zone | classical, semi-mechanistic | as the classical mean size | shape only | shape only |
+| rock-factor schemes | classical | published ratings | an input | an input |
+| group router | statistical | all 97 blasts, by its source | routes | exact on all 109 labelled blasts |
+| published regression | statistical | **all 97 blasts, by its source (in sample)** | 0.805 | 0.802, in sample |
+| refitted regression | statistical | training rows | 0.686 | -4.075 (-19.48 to 0.02) |
+| published neural network | learned | training rows | 0.362 | -0.626 (-3.35 to 0.01) |
+| support vector, radial and polynomial | learned | training rows | 0.665, 0.395 | -0.387, -4.546 |
+| random forest | learned | training rows | 0.749 | -0.231 (-2.78 to 0.38) |
+| gradient boosting | learned | training rows | 0.704 | -0.034 (-2.23 to 0.42) |
+| stacking ensemble | learned | training rows | 0.703 | -0.035 (-2.25 to 0.42) |
+
+Apart from the in-sample regression, no interval excludes zero: ten sites do not separate any of these
+arms from predicting the corpus mean, or from each other.
 
 ## Not implemented, and why
 

@@ -13,15 +13,29 @@ pip install blastfrag
 
 ## Why this exists
 
-Predicting the mean fragment size of a muckpile from a drill-and-blast design is a solved-looking
-problem with a large literature and one widely used model. Working through that literature against
-the data it is fitted on turns up things a formula collection would hide.
+Predicting the mean fragment size of a muckpile from a drill-and-blast design matters downstream:
+Hudaverdi, Kulatilake and Kuzu 2010 (`doi:10.1002/nag.957`) write that blasting has a significant
+impact on loading, crushing and grinding, and that a suitable size distribution raises crusher and
+mill throughput and lowers comminution energy. The literature offers one widely used closed-form model
+and, since 2012, a series of learned ones fitted to the same 97-blast corpus. Working through it
+against that corpus turns up things a formula collection would hide.
 
-**The classical model barely beats a constant.** On the published twelve-blast hold-out it explains
-0.232 of the variance about the identity line, and its root-mean-square error of 0.1279 m improves on
-simply predicting the training mean by 13 percent. The figure usually quoted for it, 0.57, is a
-squared correlation, which is a different quantity: a model can correlate at 0.755 and still be badly
-biased, and this one is.
+**How a model is scored decides what it appears to do.** On random 80/20 splits of the corpus, the
+learned arms explain a median 0.66 to 0.75 of the variance over 100 draws. With each of the ten
+campaigns held out in turn, every one of them loses between 0.74 and 4.94 of that, and the best lands
+within a few hundredths of zero. The 2025 headline of 0.943 sits above every one of 100 reproductions
+of its own protocol.
+
+**Ten sites cannot separate the survivors.** The classical mean-size equation scores about 0.30 under
+every protocol, whether its rock factor comes from the site itself or is predicted from Young's
+modulus over the other sites. Site-resampled intervals put it, and every learned arm, across zero.
+Whether the learned tier meets the declared criterion depends on whether one six-blast campaign is
+scored.
+
+**The classical model, as published, barely beats a constant.** On the published twelve-blast
+hold-out it explains 0.232 of the variance about the identity line, and its root-mean-square error of
+0.1279 m improves on predicting the training mean by 13 percent. The figure usually quoted for it,
+0.57, is a squared correlation, a different quantity.
 
 **The corpus is dimensionless, so the classical model could not run on it at all.** It needs rock
 volume and charge mass per hole and the published table has only ratios. The source's own prose gives
@@ -85,15 +99,35 @@ The field hold-out is an extrapolation by construction: its Young modulus of 5.6
 corpus minimum of 9.57 GPa, on the feature two independent 2025 studies both rank most important.
 Predictions on it are stamped.
 
+## The benchmark
+
+```python
+result = bf.run_benchmark(train, bf.default_arms(), n_repeats=100, n_boot=2000)
+print(result.verdict["outcome"])
+```
+
+Random protocols are repeated and reported by their spread; leave-one-site-out is pooled and scored
+on every blast and on the blasts with resolvable geometry, each with a site-resampled interval; every
+arm declares what it was fitted on, and arms fitted on the corpus itself are reported apart from the
+arms that transfer. See [the protocol-sensitivity benchmark](docs/methods/05_protocol-sensitivity.md).
+
+## Running a fitted arm elsewhere
+
+`bf.export_arm(arm)` writes a fitted learned arm as plain JSON (network weights, support vectors, flat
+tree arrays) and `bf.predict_portable(document, blast)` reads it with no dependency. The walker
+reproduces the forest, the boosting arm and the stacked model exactly, and the rest to $10^{-12}$; see
+[the portable export](docs/data/03_portable-export.md).
+
 ## Documentation
 
 The [`docs/`](docs/README.md) wiki carries the theory, every equation term by term with its source,
-the data contract, and the reasoning behind each modelling choice.
+the data contract, the benchmark's definitions and results, and the reasoning behind each modelling
+choice.
 
 ## Scope
 
-No mechanistic simulation: there is no discrete-element or hybrid stress blasting model here, and a
-hand-rolled approximation under those names would be worse than nothing. No non-ideal detonics. No
+No mechanistic simulation: there is no discrete-element or hybrid stress blasting model here, and no
+engine, licence or reference output was available to build one on. No non-ideal detonics. No
 flyrock and no ground vibration. Model constants that no primary source prints, including the timing
 factor of the modified classical model and the crush-zone branch parameters, are exposed as
 user-supplied values with documented ranges rather than invented.

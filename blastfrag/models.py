@@ -34,6 +34,7 @@ __all__ = [
     "NullModel",
     "Oracle",
     "Kuznetsov",
+    "KuznetsovTransfer",
     "KuzRam",
     "GroupDiscriminant",
     "PublishedRegression",
@@ -56,12 +57,42 @@ class Arm(ABC):
 
     ``fit`` is a no-op for the closed-form arms, which is why it has a default: a benchmark can call
     it uniformly without special-casing, and an arm that genuinely needs data overrides it.
+
+    Three provenance attributes say what an arm's free quantities were fitted on, because a split
+    protocol only means something for quantities that are fitted on its training rows:
+
+    ``in_sample_corpus``
+        The arm's coefficients were fitted, by their source, on the 97-blast training corpus itself.
+        No protocol that splits that corpus holds out a blast the arm has not seen, so its score under
+        any of them is an in-sample fit and never a transfer result.
+    ``uses_site_constant``
+        The arm reads a per-site constant that was derived from information about that same site
+        (the back-solved rock factor). Under leave-one-site-out it therefore carries knowledge of the
+        held-out site that the fitted arms are never given.
+    ``router_in_sample``
+        The arm fits its own coefficients on the training rows but selects which ones to apply with
+        the published discriminant, which is in sample for the corpus.
     """
 
     name: str
     tier: str
     lane: str
     source: str
+    fitted_on: str = "the training rows of each split"
+    in_sample_corpus: bool = False
+    uses_site_constant: bool = False
+    router_in_sample: bool = False
+    #: Set on an arm that returns another arm's mean size and differs only in curve shape.
+    shares_mean_size_with: str | None = None
+
+    def provenance(self) -> dict[str, object]:
+        """What this arm's free quantities were fitted on, for a report or an artifact."""
+        return {
+            "fitted_on": self.fitted_on,
+            "in_sample_corpus": self.in_sample_corpus,
+            "uses_site_constant": self.uses_site_constant,
+            "router_in_sample": self.router_in_sample,
+        }
 
     def fit(self, blasts: Sequence[Blast]) -> "Arm":
         """Train on a set of blasts. Closed-form arms ignore this and return themselves."""
@@ -123,6 +154,7 @@ class NullModel(Arm):
     tier = "control"
     lane = "live"
     source = "the mean measured size of the training blasts"
+    fitted_on = "the mean measured size of the training rows of each split"
 
     def __init__(self, mean_m: float | None = None) -> None:
         self.mean_m = mean_m
@@ -150,6 +182,7 @@ class Oracle(Arm):
     tier = "control"
     lane = "offline"
     source = "the measured value itself"
+    fitted_on = "the measurement it returns"
 
     def predict_one(self, blast: Blast) -> Prediction:
         if blast.x50_m is None:
@@ -180,6 +213,11 @@ class Kuznetsov(Arm):
         "Kuznetsov 1973 with Cunningham's explosive-strength correction, as printed in Hudaverdi, "
         "Kulatilake and Kuzu 2010 doi:10.1002/nag.957 Eq. 1"
     )
+    fitted_on = (
+        "nothing in any split: the per-site rock factor is back-solved from the 2012 paper's "
+        "published Kuz-Ram predictions for that site's own hold-out blasts"
+    )
+    uses_site_constant = True
 
     def __init__(
         self,
@@ -219,14 +257,128 @@ class Kuznetsov(Arm):
         )
 
 
+class KuznetsovTransfer(Arm):
+    """The classical mean-size equation with a rock factor that uses nothing from the target site.
+
+    :class:`Kuznetsov` reads a per-site rock factor back-solved from the published predictions for
+    that same site. Under leave-one-site-out that is knowledge of the held-out site, which the fitted
+    arms never receive, so its cross-site score could in principle be borrowed rather than earned.
+
+    This arm removes the borrowing. ``fit`` takes the training rows, looks up the recovered factor of
+    every training site that has one, and fits a straight line in logarithms against the site's mean
+    Young modulus::
+
+        ln A = a + b ln E
+
+    with one point per site, so a 22-blast quarry and a six-blast mine weigh the same. The factor for
+    a blast is then predicted from its own modulus, which an engineer has before the first blast at a
+    new mine.
+
+    The relation is a **calibration of this package, not a published equation**. The modulus is used
+    because it is the one rock property the corpus records for every blast and the one both 2025
+    studies rank as the most important input. The recovered factors and the site moduli correlate at
+    about 0.87 on this corpus; the residual is real and travels with the arm's score.
+    """
+
+    name = "kuznetsov-transfer"
+    tier = "classical"
+    lane = "live"
+    source = (
+        "Kuznetsov 1973 with Cunningham's correction (Hudaverdi et al. 2010 Eq. 1); rock factor "
+        "predicted from Young's modulus by a log-linear fit over the training sites' recovered "
+        "factors, a calibration of this package"
+    )
+    fitted_on = (
+        "the training rows of each split: one point per training site, its recovered rock factor "
+        "against its mean Young modulus"
+    )
+
+    #: Fewer sites than this and a two-parameter line through them is an interpolation, not a fit.
+    MIN_SITES = 3
+
+    def __init__(
+        self,
+        site_factors: dict[str, float] | None = None,
+        *,
+        timing_factor: float = 1.0,
+    ) -> None:
+        self.site_factors = dict(site_factors if site_factors is not None else SITE_ROCK_FACTOR)
+        self.timing_factor = timing_factor
+        self.intercept: float | None = None
+        self.slope: float | None = None
+        self.fit_sites: tuple[str, ...] = ()
+
+    def fit(self, blasts: Sequence[Blast]) -> "KuznetsovTransfer":
+        import numpy as np
+
+        moduli: dict[str, list[float]] = {}
+        for blast in blasts:
+            if blast.site in self.site_factors:
+                moduli.setdefault(blast.site, []).append(blast.E_GPa)
+        sites = sorted(moduli)
+        if len(sites) < self.MIN_SITES:
+            raise ValueError(
+                f"the transfer rock factor needs at least {self.MIN_SITES} training sites with a "
+                f"recovered factor, got {len(sites)}"
+            )
+        x = np.log([sum(moduli[s]) / len(moduli[s]) for s in sites])
+        y = np.log([self.site_factors[s] for s in sites])
+        slope, intercept = np.polyfit(x, y, 1)
+        self.slope, self.intercept = float(slope), float(intercept)
+        self.fit_sites = tuple(sites)
+        return self
+
+    def rock_factor_for(self, E_GPa: float) -> float:
+        """The rock factor this fit predicts for a rock of the given Young modulus."""
+        if self.intercept is None or self.slope is None:
+            raise ValueError("the transfer rock factor has not been fitted")
+        return math.exp(self.intercept + self.slope * math.log(E_GPa))
+
+    def predict_one(self, blast: Blast) -> Prediction:
+        if self.intercept is None:
+            return self._abstain(blast, "the transfer rock factor has not been fitted")
+        if not has_absolute_geometry(blast):
+            return self._abstain(
+                blast,
+                f"{blast.site} publishes no hole diameter, so rock volume and charge mass cannot "
+                "be resolved; this equation needs both",
+            )
+        try:
+            pattern = reconstruct_pattern(blast)
+        except GeometryUnavailable as exc:
+            return self._abstain(blast, str(exc))
+        factor = self.rock_factor_for(blast.E_GPa)
+        return self._guarded(
+            blast,
+            kuznetsov_x50_m(pattern, factor, timing_factor=self.timing_factor),
+            detail={
+                "rock_factor": factor,
+                "rock_factor_origin": (
+                    f"predicted from E = {blast.E_GPa:g} GPa by ln A = {self.intercept:.4f} + "
+                    f"{self.slope:.4f} ln E, fitted over {len(self.fit_sites)} training sites"
+                ),
+                "fit_sites": list(self.fit_sites),
+                "rock_volume_m3": pattern.rock_volume_m3,
+                "charge_mass_kg": pattern.charge_mass_kg,
+                "timing_factor": self.timing_factor,
+            },
+        )
+
+
 class KuzRam(Kuznetsov):
     """The full classical model: the mean size plus a Rosin-Rammler distribution around it.
 
     The mean size is identical to :class:`Kuznetsov`; what this adds is the shape, and therefore the
     percentile sizes an engineer actually specifies against.
+
+    Because the mean size is shared, this arm and the two below it are ONE predictor of ``x50``, not
+    three, and a benchmark of mean size must count them once. Their curve shapes differ, and no
+    dataset held for this package records a measured size distribution, so the shapes are
+    model output that nothing here validates. ``shares_mean_size_with`` says so in code.
     """
 
     name = "kuz-ram"
+    shares_mean_size_with = "kuznetsov"
     source = (
         "Kuznetsov 1973 with the Cunningham 1987 uniformity index and the Rosin-Rammler "
         "distribution, as printed in Amoako, Jha and Zhong 2022 doi:10.3390/mining2020013 "
@@ -253,6 +405,7 @@ class Swebrec(KuzRam):
 
     name = "swebrec"
     source = "Ouchterlony 2005, as printed in Amoako, Jha and Zhong 2022 Eqs. 10 and 11"
+    shares_mean_size_with = "kuznetsov"
 
     def __init__(self, *args, undulation: float = 2.0, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -281,6 +434,7 @@ class CrushZone(KuzRam):
         "structure from Amoako, Jha and Zhong 2022 section 3 describing Kanchibotla et al. 1999 "
         "and Djordjevic 1999; branch constants caller-supplied"
     )
+    shares_mean_size_with = "kuznetsov"
 
     def __init__(self, *args, parameters: CrushZoneParameters | None = None, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -354,6 +508,8 @@ class GroupDiscriminant(Arm):
     tier = "statistical"
     lane = "live"
     source = "Hudaverdi, Kulatilake and Kuzu 2010 doi:10.1002/nag.957 Eq. 8"
+    fitted_on = "all 97 blasts of the training corpus, by Hudaverdi et al. 2010"
+    in_sample_corpus = True
 
     def predict_one(self, blast: Blast) -> Prediction:
         return Prediction(
@@ -437,6 +593,8 @@ class PublishedRegression(Arm):
     tier = "statistical"
     lane = "live"
     source = "Hudaverdi, Kulatilake and Kuzu 2010 doi:10.1002/nag.957 Eqs. 9 and 10"
+    fitted_on = "all 97 blasts of the training corpus, by Hudaverdi et al. 2010"
+    in_sample_corpus = True
 
     def __init__(self, coefficients: dict[Group, RegressionCoefficients] | None = None) -> None:
         self.coefficients = coefficients or PUBLISHED_COEFFICIENTS
@@ -464,6 +622,7 @@ class RefittedRegression(Arm):
     tier = "statistical"
     lane = "live"
     source = "the published functional form, coefficients refitted from the training rows supplied"
+    router_in_sample = True
 
     def __init__(self) -> None:
         self.coefficients: dict[Group, RegressionCoefficients] = {}
@@ -517,6 +676,7 @@ LADDER: dict[str, type[Arm]] = {
     "null": NullModel,
     "oracle": Oracle,
     "kuznetsov": Kuznetsov,
+    "kuznetsov-transfer": KuznetsovTransfer,
     "kuz-ram": KuzRam,
     "swebrec": Swebrec,
     "crush-zone": CrushZone,

@@ -199,6 +199,12 @@ class PublishedNeuralNetwork(Arm):
     - eight simulations at each width, scored by root mean square error and by correlation, with the
       best width chosen on the held-out rows exactly as the source did.
 
+    Two consequences of the published design matter under leave-one-site-out and are stated rather
+    than corrected. The output is clamped to the range of training targets (see ``predict_one``), so a
+    held-out site whose fragments are coarser than every training site cannot be predicted at all:
+    Reocin, mean 0.616 m, is the case. And the hidden widths are fixed at the published optima,
+    which the source chose on its own hold-out.
+
     The published optima are 9 hidden units for the high-modulus group and 7 for the low-modulus
     group. Whether this reproduction lands on the same widths is a **result**, not an assumption, and
     it is reported rather than asserted: the source's own tables show the choice is unstable, with
@@ -209,6 +215,7 @@ class PublishedNeuralNetwork(Arm):
     tier = "learned"
     lane = "offline-train-live-infer"
     source = "Kulatilake, Hudaverdi and Wu 2012 doi:10.1007/s10706-012-9496-3 section 5"
+    router_in_sample = True
 
     def __init__(
         self,
@@ -442,7 +449,15 @@ class SupportVectorRegression(_SklearnArm):
 
 
 class RandomForest(_SklearnArm):
-    """Random forest with the hyperparameters the 2025 stacking study settled on."""
+    """Random forest with the hyperparameters the 2025 stacking study settled on.
+
+    The source prints two parameter sets. Its single learners were first tuned to
+    ``random_state = 1, n_estimators = 50``; the final parameters, stated where the stacked model is
+    built, are ``random_state = 27, n_estimators = 76``. Which set produced its standalone forest
+    figure (variance explained 0.797) is not stated unambiguously in the copy held for this work.
+    This arm uses the final set, the same forest the stacking arm contains, so its score is not an
+    exact reproduction of 0.797 and is never presented as one.
+    """
 
     name = "random-forest"
     source = "Sui, Zhou, Zhao, Yang and Zou 2025 doi:10.3390/app15031254, final parameters"
@@ -456,11 +471,13 @@ class RandomForest(_SklearnArm):
 class GradientBoosting(_SklearnArm):
     """Gradient boosting with the 2025 study's parameters.
 
-    The source used xgboost with a learning rate of 0.5. That learning rate is unusually high, and
-    the source itself reports the consequence: "the prediction bias of the XGBoost model in the
-    testing set is more pronounced, and its prediction accuracy is much worse than in the training
-    set, indicating that the model is overfitting". Reproduced as published, with the overfitting
-    left visible rather than tuned away.
+    The source's final boosting parameters are ``random_state = 42, learning_rate = 0.5``; its single
+    learner was first tuned with a learning rate of 1.9, and as with the forest, which set produced
+    its standalone figure (0.758) is not stated unambiguously. The number of trees is not printed, so
+    the library default of 100 is used. The source reports the consequence of this setting itself:
+    "the prediction bias of the XGBoost model in the testing set is more pronounced, and its
+    prediction accuracy is much worse than in the training set, indicating that the model is
+    overfitting". Reproduced with the final parameters, the overfitting left visible.
     """
 
     name = "xgboost"
@@ -476,45 +493,73 @@ class GradientBoosting(_SklearnArm):
         return XGBRegressor(learning_rate=0.5, random_state=42, n_estimators=100)
 
 
+class _InSampleStack:
+    """Forest and boosting under a linear meta-learner trained on their in-sample predictions.
+
+    Written out rather than taken from scikit-learn's ``StackingRegressor`` because that class always
+    trains the meta-learner on out-of-fold predictions, which is the cross-validation the source
+    says it cancelled. Exposes ``forest``, ``boosting`` and ``meta`` so the portable export can read
+    the three fitted parts.
+    """
+
+    def __init__(self) -> None:
+        from sklearn.ensemble import RandomForestRegressor
+        from sklearn.linear_model import LinearRegression
+
+        try:
+            from xgboost import XGBRegressor
+        except ImportError as exc:  # pragma: no cover
+            raise ImportError(
+                "the stacking arm needs the 'boost' extra: pip install blastfrag[boost]. A "
+                "different boosting library would be a different method, so none is substituted."
+            ) from exc
+        self.forest = RandomForestRegressor(n_estimators=76, random_state=27)
+        self.boosting = XGBRegressor(learning_rate=0.5, random_state=42, n_estimators=100)
+        self.meta = LinearRegression()
+
+    def _base(self, X):
+        import numpy as np
+
+        return np.column_stack([self.forest.predict(X), self.boosting.predict(X)])
+
+    def fit(self, X, y) -> "_InSampleStack":
+        self.forest.fit(X, y)
+        self.boosting.fit(X, y)
+        self.meta.fit(self._base(X), y)
+        return self
+
+    def predict(self, X):
+        return self.meta.predict(self._base(X))
+
+
 class StackingEnsemble(_SklearnArm):
     """The 2025 state of the art on this corpus: forest and boosting under a linear meta-learner.
 
     The source chose a plain linear regression as the meta-learner deliberately, "to avoid
     overfitting caused by excessive complexity", having found its boosting base learner overfitting.
+    Final base parameters, as printed: random forest ``random_state = 27, n_estimators = 76``;
+    XGBoost ``random_state = 42, learning_rate = 0.5``.
 
-    **It also removed cross-validation**, recording that "the cross-validated model had a poor
-    prediction effect on the test set". On a 97-row corpus containing 17 rows that duplicate another
-    row's feature vector, that is a symptom with a mechanism, and it is the reason this package
-    scores every learned arm under three split protocols rather than one.
+    **Cross-validation was cancelled while the stacked model was built.** The source, in the
+    paragraph describing that construction: "the first attempt was to use cross-validation to
+    increase the generalization ability of the model, but the cross-validated model had a poor
+    prediction effect on the test set, and the stacking fusion model itself could effectively
+    improve the residuals, thus canceling the cross-validation". In a stacked model the
+    cross-validation that can be cancelled is the out-of-fold scheme that produces the meta-learner's
+    training inputs, so this arm trains the meta-learner on the base learners' IN-SAMPLE predictions.
+    That reading is this package's; the source does not spell out the mechanism. Releases before
+    0.3.0 passed ``cv=2`` to scikit-learn's ``StackingRegressor``, which is a different method.
 
-    Reproduced as published, without cross-validation, so the protocol comparison is like for like.
+    On a 97-row corpus containing 17 rows that duplicate another row's feature vector, a test score
+    that improves when cross-validation is removed is a symptom with a mechanism, and it is the reason
+    this package scores every learned arm under three split protocols rather than one.
     """
 
     name = "stacking"
-    source = "Sui, Zhou, Zhao, Yang and Zou 2025 doi:10.3390/app15031254 section 4"
+    source = "Sui, Zhou, Zhao, Yang and Zou 2025 doi:10.3390/app15031254 sections 3 and 4"
 
     def _build(self):
-        from sklearn.ensemble import RandomForestRegressor, StackingRegressor
-        from sklearn.linear_model import LinearRegression
-
-        try:
-            from xgboost import XGBRegressor
-
-            boosting = XGBRegressor(learning_rate=0.5, random_state=42, n_estimators=100)
-        except ImportError:  # pragma: no cover
-            from sklearn.ensemble import GradientBoostingRegressor
-
-            boosting = GradientBoostingRegressor(learning_rate=0.5, random_state=42)
-        return StackingRegressor(
-            estimators=[
-                ("rf", RandomForestRegressor(n_estimators=76, random_state=27)),
-                ("gb", boosting),
-            ],
-            final_estimator=LinearRegression(),
-            # The source removed cross-validation; passing the smallest legal value reproduces that
-            # as closely as the library allows while keeping the fit defined.
-            cv=2,
-        )
+        return _InSampleStack()
 
 
 LEARNED_LADDER: dict[str, type[Arm]] = {

@@ -24,6 +24,8 @@ __all__ = [
     "LeakageError",
     "random_split",
     "deduplicated_split",
+    "repeated_random_splits",
+    "repeated_deduplicated_splits",
     "leave_one_site_out",
     "all_protocols",
     "assert_no_leakage",
@@ -210,10 +212,52 @@ def leave_one_site_out(blasts: Sequence[Blast]) -> Iterator[Split]:
         yield split
 
 
-def all_protocols(blasts: Sequence[Blast], *, seed: int = 0) -> dict[str, list[Split]]:
-    """Every protocol, so a benchmark shows the gap rather than choosing a side."""
+def repeated_random_splits(
+    blasts: Sequence[Blast], *, n_repeats: int = 100, test_fraction: float = 0.2, seed: int = 0
+) -> list[Split]:
+    """The random protocol drawn ``n_repeats`` times, seeds ``seed`` to ``seed + n_repeats - 1``.
+
+    One draw of about 19 test rows is not a measurement of a protocol. Measured over 100 draws on this
+    corpus, the classical arm's variance explained runs from -0.59 at the 5th percentile to 0.74 at
+    the 95th, so a single draw can put it on either side of zero; the first release of this package
+    reported seed 0, which happened to land at -0.03 against a median of 0.30. Each draw is scored on
+    its own and the spread is reported; the draws are never pooled, because pooling would count rows
+    that land in several test sets several times.
+    """
+    if n_repeats < 1:
+        raise ValueError(f"n_repeats must be at least 1, got {n_repeats}")
+    return [
+        random_split(blasts, test_fraction=test_fraction, seed=seed + k) for k in range(n_repeats)
+    ]
+
+
+def repeated_deduplicated_splits(
+    blasts: Sequence[Blast], *, n_repeats: int = 100, test_fraction: float = 0.2, seed: int = 0
+) -> list[Split]:
+    """The deduplicated protocol drawn ``n_repeats`` times, for the same reason as the random one."""
+    if n_repeats < 1:
+        raise ValueError(f"n_repeats must be at least 1, got {n_repeats}")
+    return [
+        deduplicated_split(blasts, test_fraction=test_fraction, seed=seed + k)
+        for k in range(n_repeats)
+    ]
+
+
+#: Protocols whose splits are independent repeated draws, scored one by one, rather than the folds of
+#: one partition, scored pooled.
+REPEATED_PROTOCOLS: frozenset[str] = frozenset({"random-8020", "dedup-random"})
+
+
+def all_protocols(
+    blasts: Sequence[Blast], *, seed: int = 0, n_repeats: int = 1
+) -> dict[str, list[Split]]:
+    """Every protocol, so a benchmark shows the gap rather than choosing a side.
+
+    The two random protocols return ``n_repeats`` independent draws each (one, by default, for
+    backward compatibility); leave-one-site-out returns its ten folds.
+    """
     return {
-        "random-8020": [random_split(blasts, seed=seed)],
-        "dedup-random": [deduplicated_split(blasts, seed=seed)],
+        "random-8020": repeated_random_splits(blasts, n_repeats=n_repeats, seed=seed),
+        "dedup-random": repeated_deduplicated_splits(blasts, n_repeats=n_repeats, seed=seed),
         "leave-one-site-out": list(leave_one_site_out(blasts)),
     }

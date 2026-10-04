@@ -2,6 +2,64 @@
 
 All notable changes to this project. Format follows Keep a Changelog; newest on top.
 
+## [0.03.000] - 2026-10-04
+
+An adversarial re-run of 0.2.2 found that several reported effects came from the evaluation design
+rather than from the models. This release changes what the benchmark measures and reports; the kill
+criterion's text is unchanged and a test now pins its hash.
+
+### Added
+
+- Repeated random protocols: `repeated_random_splits`, `repeated_deduplicated_splits`, and
+  `run_benchmark(n_repeats=100)` scoring every draw on its own and reporting the spread
+  (`detail["repeats"]`, `summarise_draws`, `quantile`). The protocol gap is computed from the median.
+- Two supports for every leave-one-site-out score (`SUPPORTS`): every blast, and the blasts with
+  resolvable geometry, where the classical arms can also answer. The criterion is evaluated on both
+  and `depends_on_support` reports a disagreement.
+- Site-resampled 95 percent intervals on every grouped score (`n_boot=2000`), per-site error for every
+  arm, and every out-of-fold prediction.
+- Arm provenance: `fitted_on`, `in_sample_corpus`, `uses_site_constant`, `router_in_sample`, and
+  `shares_mean_size_with` on Kuz-Ram, Swebrec and the crush-zone composition. The verdict reports
+  in-sample arms separately (`in_sample_arms`) and never lists them as transferring.
+- `KuznetsovTransfer`: the classical equation with a rock factor predicted from Young's modulus by a
+  log-linear fit over the training sites only. Held out by site it scores 0.298 against 0.311 for the
+  arm that reads the held-out site's own factor.
+- `blastfrag.diagnostics`: an Isolation Forest screen (reported, never applied as a filter),
+  model-native feature importance, and resampling importance under leave-one-site-out.
+- `blastfrag.export`: every fitted learned arm as plain JSON, with a dependency-free reference
+  walker (`predict_portable`) that reproduces the forest, boosting and stacked arms exactly and the
+  network and support-vector arms to 1e-12. Schema `blastfrag.portable/v1`.
+- Docs: the protocol page rewritten with the definitions and the 0.3.0 results, new pages for the
+  distributions, the transfer rung, the diagnostics and the portable export, two guides, and a
+  generated figure of the three protocols.
+
+### Changed
+
+- **The stacking arm is built as the source describes**: base learners fitted on all training rows and
+  the linear meta-learner on their in-sample predictions, the cross-validation the source cancelled.
+  0.2.x used scikit-learn's out-of-fold stacking with two folds, a different method. Built this way
+  the meta-learner gives the boosting learner a weight of 1.02, and held out by site the arm scores
+  -0.035 instead of -0.951.
+- The verdict's outcome sentence reports the row-set dependence, the absence of any interval above
+  zero outside in-sample arms, and the null model's anti-correlation (-0.79) under leave-one-site-out.
+- Bootstrap intervals use the interpolating quantile instead of an off-by-one index.
+- CI follows ADR-0074: one Python version, no scikit-learn or xgboost installed, slow and training
+  tests excluded; the full suite runs locally before every push.
+
+### Removed
+
+- The claims that the classical arm "improves when held out by site" and that deduplication raises
+  the learned scores. Both were read off the single seed-0 draw; over 100 draws the classical arm
+  scores 0.303 at the median random draw against 0.311 held out by site, and deduplication moves no
+  forest, boosting or support-vector median by more than 0.015.
+- `published-regression` from the list of arms that transfer: its coefficients were fitted by its
+  source on these 97 blasts.
+- The standalone forest's and boosting arm's comparison with the source's single-learner figures
+  (0.797, 0.758): the source prints two parameter sets for those learners and does not say which
+  produced them. `PUBLISHED_RANDOM_SPLIT_R2` keeps the stacking (0.943) and polynomial SVR (0.578)
+  figures, whose parameters are unambiguous; 0.943 lies above all 100 reproduced draws.
+- The silent fallback from XGBoost to scikit-learn's gradient boosting in the stacking arm.
+
 ## [0.02.002] - 2026-09-26
 
 ### Changed

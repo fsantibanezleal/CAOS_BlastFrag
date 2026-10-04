@@ -111,13 +111,19 @@ The same functional form refitted on the 97 rows is a linear least squares in lo
 no optimiser. On the published hold-out it generalises **slightly worse** than the coefficients the
 authors published: 0.807 against 0.827. A small argument that their fit was not overtuned.
 
-Under leave-one-site-out the difference stops being small. The published equation holds at **0.802**;
-the refit collapses to **-4.075**, and on one fold extrapolates to a mean fragment size of 10.48 m,
-which the plausibility guard now refuses rather than scores.
+Under leave-one-site-out the difference stops being small, and the two numbers do not measure the
+same thing. The refit, fitted on nine sites at a time, collapses to **-4.075** and on one fold
+extrapolates to a mean fragment size of 10.48 m, which the plausibility guard now refuses rather than
+scores.
 
-The mechanism is the whole finding of this package in one comparison. The published coefficients are
-**fixed**, so they cannot overfit to whichever nine sites happen to be in the training fold. The
-refit is fitted, so it does.
+The published equation scores **0.802** under the same protocol, but that is **not a transfer
+result**: Hudaverdi et al. fitted its coefficients on these same 97 blasts, so no fold holds out a
+blast it has not seen, and 0.802 is its in-sample fit (0.8018 over all 97). Releases before 0.3.0
+described these coefficients as "fixed" and counted the arm among those that transfer; the benchmark
+now reports it under `in_sample_arms` with that reason. Its out-of-sample evidence is the two
+published hold-outs, 13 and 12 blasts from the same sites, where the recomputed equation explains
+0.854 and 0.827 of the variance (section 3). The refit's collapse is the corresponding transfer
+result for this functional form.
 
 ## 5. Refusing to fit
 

@@ -1,7 +1,8 @@
 # The classical rung
 
-Closed form, microseconds to evaluate, and still the industry default. That combination is why it is
-worth testing hard: a model this cheap tends to be believed.
+Closed form and evaluated in microseconds. Amoako, Jha and Zhong 2022 describe the Kuz-Ram family as
+the most widely used, favoured in daily blasting operations because it is easily parameterised; this
+page derives it term by term and records where it fails on this corpus.
 
 ---
 

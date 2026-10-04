@@ -32,7 +32,7 @@ Quick start::
 
 from __future__ import annotations
 
-__version__ = "0.02.002"
+__version__ = "0.03.000"
 __all__ = [
     "__version__",
     # types
@@ -65,6 +65,8 @@ __all__ = [
 
 from .benchmark import (
     KILL_CRITERION,
+    PUBLISHED_RANDOM_SPLIT_R2,
+    SUPPORTS,
     ArmResult,
     BenchmarkResult,
     ProtocolResult,
@@ -100,7 +102,16 @@ from .geometry import (
     reconstruct_pattern,
     verify_reconstruction,
 )
-from .metrics import Score, bootstrap_interval, null_model_score, score, training_mean, worst_rows
+from .metrics import (
+    Score,
+    bootstrap_interval,
+    null_model_score,
+    quantile,
+    score,
+    summarise_draws,
+    training_mean,
+    worst_rows,
+)
 from .models import (
     LADDER,
     TIERS,
@@ -108,6 +119,7 @@ from .models import (
     CrushZone,
     GroupDiscriminant,
     Kuznetsov,
+    KuznetsovTransfer,
     KuzRam,
     NullModel,
     Oracle,
@@ -132,6 +144,8 @@ from .splits import (
     duplicate_groups,
     leave_one_site_out,
     random_split,
+    repeated_deduplicated_splits,
+    repeated_random_splits,
 )
 from .types import (
     ANFO,
@@ -152,17 +166,24 @@ __all__ += [
     "rock_factor", "SCHEMES", "SITE_ROCK_FACTOR", "back_solve_rock_factor",
     "derive_site_rock_factors",
     # ladder
-    "Arm", "LADDER", "TIERS", "NullModel", "Oracle", "Kuznetsov", "KuzRam", "Swebrec",
+    "Arm", "LADDER", "TIERS", "NullModel", "Oracle", "Kuznetsov", "KuznetsovTransfer", "KuzRam",
+    "Swebrec",
     "CrushZone", "GroupDiscriminant", "PublishedRegression", "RefittedRegression",
     "assign_group", "discriminant_score",
     # splits
     "Split", "LeakageError", "random_split", "deduplicated_split", "leave_one_site_out",
-    "all_protocols", "duplicate_groups",
+    "all_protocols", "duplicate_groups", "repeated_random_splits", "repeated_deduplicated_splits",
     # metrics
     "Score", "score", "null_model_score", "bootstrap_interval", "worst_rows", "training_mean",
+    "quantile", "summarise_draws",
 ]
 
 __all__ += [
-    "run_benchmark", "run_fixed_holdout", "default_arms", "KILL_CRITERION",
+    "run_benchmark", "run_fixed_holdout", "default_arms", "KILL_CRITERION", "SUPPORTS",
+    "PUBLISHED_RANDOM_SPLIT_R2",
     "BenchmarkResult", "ProtocolResult", "ArmResult",
+    # portable export: reading a document needs no optional dependency
+    "export_arm", "predict_portable", "PORTABLE_SCHEMA", "PortableError",
 ]
+
+from .export import PORTABLE_SCHEMA, PortableError, export_arm, predict_portable  # noqa: E402

@@ -10,24 +10,24 @@ concurrency:
 
 jobs:
   test:
+    # ADR-0074: a published library may run its unit tests in CI on ONE Python version, without the
+    # training stack, in minutes. scikit-learn and xgboost are therefore not installed here: every test
+    # that needs them skips, and the full suite, including the slow 100-draw benchmark, runs locally
+    # before every push and is the validation of record.
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
           cache: pip
-      - name: Install
-        run: pip install -e ".[dev]"
+      - name: Install (core, no training stack)
+        run: pip install -e . pytest ruff
       - name: Lint
         run: ruff check blastfrag tests
-      - name: Tests
-        run: pytest
+      - name: Tests (numpy-only; learned, training and slow tests excluded)
+        run: pytest -m "not slow and not trains"
       - name: No em-dash and no emoji in tracked content (ADR-0067)
         run: python scripts/check_content_standards.py
 
@@ -74,7 +74,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev]"
+      - run: pip install -e .
       - name: The shipped corpus is still the published table, and has not moved
         run: |
           python - <<'PY'

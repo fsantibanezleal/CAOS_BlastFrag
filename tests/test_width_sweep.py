@@ -42,7 +42,7 @@ def test_the_sweep_fits_every_width_with_its_simulations(corpus, holdout, monkey
     for hidden in held_out:
         # One network per fold, ten folds, every one with the requested simulations.
         assert sum(1 for h, n in seen if h == hidden and n == 2) >= 10, hidden
-    assert [row["hidden"] for row in result["leave_one_site_out"]] == [{1: 9, 2: 7}, {1: 6, 2: 6}, {1: 7, 2: 7}]
+    assert [row["hidden"] for row in result["leave_one_site_out"]] == held_out[2:] + held_out[:2]
     assert result["widths"] == [6, 7] and result["n_simulations"] == 2
 
 

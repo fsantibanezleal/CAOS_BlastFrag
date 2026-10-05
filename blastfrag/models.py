@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from .classical import (
+    IN_SITU_CAP_SOURCE,
     CrushZoneParameters,
     cunningham_uniformity_index,
     kuznetsov_x50_m,
@@ -35,6 +36,7 @@ __all__ = [
     "Oracle",
     "Kuznetsov",
     "KuznetsovTransfer",
+    "InSituCap",
     "KuzRam",
     "GroupDiscriminant",
     "PublishedRegression",
@@ -364,6 +366,66 @@ class KuznetsovTransfer(Arm):
             },
         )
 
+
+
+class InSituCap(Arm):
+    """Another arm's mean size, capped at the blast's in-situ block size: a declared choice.
+
+    A blast breaks blocks and does not fuse them, so no fragment is larger than the in-situ block it
+    came from (:func:`blastfrag.classical.cap_at_in_situ_block`). The classical equation does not read
+    the block size, and on the training corpus it predicts a mean size above the block on three Reocin
+    blasts (Rc1 to Rc3), while no measured mean size anywhere exceeds its block. This arm returns the
+    base prediction where it is below the block and the block size where it is not.
+
+    It is **not a published relation**, and its provenance says so (``declared_not_published``). It
+    inherits everything else from the arm it caps: tier, lane, what it was fitted on and the
+    provenance flags, so a capped arm that reads a site constant is reported as one.
+    """
+
+    def __init__(self, base: Arm) -> None:
+        self.base = base
+        self.name = f"{base.name}-capped"
+        self.tier = base.tier
+        self.lane = base.lane
+        self.source = f"{base.source}; capped at the in-situ block size, {IN_SITU_CAP_SOURCE}"
+        self.fitted_on = base.fitted_on
+        self.in_sample_corpus = base.in_sample_corpus
+        self.uses_site_constant = base.uses_site_constant
+        self.router_in_sample = base.router_in_sample
+
+    def provenance(self) -> dict[str, object]:
+        return self.base.provenance() | {"caps": self.base.name, "declared_not_published": True}
+
+    def fit(self, blasts: Sequence[Blast]) -> "InSituCap":
+        self.base.fit(blasts)
+        return self
+
+    def predict_one(self, blast: Blast) -> Prediction:
+        uncapped = self.base.predict_one(blast)
+        if uncapped.abstained:
+            return Prediction(
+                method=self.name,
+                blast_id=blast.blast_id,
+                x50_m=None,
+                abstain_reason=uncapped.abstain_reason,
+                extrapolated=uncapped.extrapolated,
+                group=uncapped.group,
+                detail=uncapped.detail,
+            )
+        value = float(uncapped.x50_m)  # type: ignore[arg-type]
+        return Prediction(
+            method=self.name,
+            blast_id=blast.blast_id,
+            x50_m=min(value, blast.XB_m),
+            extrapolated=uncapped.extrapolated,
+            group=uncapped.group,
+            detail=uncapped.detail
+            | {
+                "capped_from_m": value,
+                "in_situ_block_m": blast.XB_m,
+                "cap_binds": value > blast.XB_m,
+            },
+        )
 
 class KuzRam(Kuznetsov):
     """The full classical model: the mean size plus a Rosin-Rammler distribution around it.

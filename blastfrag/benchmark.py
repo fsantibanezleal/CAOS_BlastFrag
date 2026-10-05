@@ -47,6 +47,8 @@ __all__ = [
     "KILL_CRITERION",
     "SUPPORTS",
     "PUBLISHED_RANDOM_SPLIT_R2",
+    "PUBLISHED_NETWORK_WIDTHS",
+    "network_width_sweep",
 ]
 
 KILL_CRITERION = (
@@ -209,8 +211,10 @@ def _score_repeated(
     first: Score | None = None
     r2: list[float] = []
     rmse: list[float] = []
+    kept: list[tuple[list[Blast], list[Prediction]]] = []
     for split in splits:
         tested, predictions = _fit_predict(factory, split)
+        kept.append((tested, predictions))
         result = score(tested, predictions, method=name)
         if first is None:
             first = result
@@ -230,6 +234,7 @@ def _score_repeated(
             "repeats": summarise_draws(r2),
             "rmse_repeats": summarise_draws(rmse),
             "draws_r2_identity": r2,
+            _KEPT: kept,
         },
     )
 
@@ -328,8 +333,96 @@ def _score_grouped(
             "predictions": {
                 p.blast_id: p.x50_m for p in predictions
             },
+            _KEPT: (tested, predictions),
         },
     )
+
+
+_KEPT = "_kept_predictions"
+"""Where a scorer leaves its predictions for the common-support pass, which removes them."""
+
+
+def _answered(predictions: Sequence[Prediction]) -> set[str]:
+    return {p.blast_id for p in predictions if not p.abstained}
+
+
+def _on_rows(
+    tested: Sequence[Blast], predictions: Sequence[Prediction], keep: set[str]
+) -> tuple[list[Blast], list[Prediction]]:
+    by_id = {p.blast_id: p for p in predictions}
+    rows = [b for b in tested if b.blast_id in keep]
+    return rows, [by_id[b.blast_id] for b in rows]
+
+
+def _add_common_support(
+    results: Sequence[ArmResult], *, repeated: bool, n_boot: int, boot_seed: int
+) -> None:
+    """Score every arm again on the rows that every size-predicting arm answered.
+
+    ``score`` drops each arm's abstentions, so two arms in one table are otherwise scored on different
+    rows. The size-predicting arms are the ones that answer at least one row in the protocol; the
+    router predicts a group, answers none, and is left out so it cannot empty the intersection. The
+    declared ``SUPPORTS`` and the verdict are not touched: this is a row set reported beside them, not
+    one the criterion is re-evaluated on after the run.
+    """
+    if not results:
+        return
+    if repeated:
+        draws = [r.detail[_KEPT] for r in results]
+        size_arms = [
+            i for i, kept in enumerate(draws) if any(_answered(p) for _t, p in kept)
+        ]
+        names = sorted(results[i].arm for i in size_arms)
+        n_draws = len(draws[0])
+        common_ids = [
+            set.intersection(*(_answered(draws[i][d][1]) for i in size_arms)) if size_arms else set()
+            for d in range(n_draws)
+        ]
+        for result, kept in zip(results, draws):
+            per_draw: list[float | None] = []
+            rmse: list[float] = []
+            for (tested, predictions), keep in zip(kept, common_ids):
+                rows, preds = _on_rows(tested, predictions, keep)
+                if len(rows) < 2:
+                    per_draw.append(None)
+                    continue
+                scored = score(rows, preds, method=result.arm)
+                per_draw.append(scored.r2_identity)
+                if scored.rmse_m is not None:
+                    rmse.append(scored.rmse_m)
+            result.detail["common"] = {
+                "repeats": summarise_draws([v for v in per_draw if v is not None]),
+                "rmse_repeats": summarise_draws(rmse),
+                "n_rows": summarise_draws([float(len(k)) for k in common_ids]),
+                "draws_r2_identity": per_draw,
+                "arms": names,
+            }
+    else:
+        pooled = [r.detail[_KEPT] for r in results]
+        size_arms = [i for i, (_t, p) in enumerate(pooled) if _answered(p)]
+        names = sorted(results[i].arm for i in size_arms)
+        keep = set.intersection(*(_answered(pooled[i][1]) for i in size_arms)) if size_arms else set()
+        for result, (tested, predictions) in zip(results, pooled):
+            rows, preds = _on_rows(tested, predictions, keep)
+            scored = score(rows, preds, method=result.arm)
+            interval: list[float] | None = None
+            if n_boot > 0 and scored.r2_identity is not None:
+                try:
+                    _point, low, high = bootstrap_interval(
+                        rows, preds, unit="site", n_boot=n_boot, seed=boot_seed
+                    )
+                    interval = [low, high]
+                except ValueError:
+                    interval = None
+            result.detail["common"] = {
+                "score": scored.as_dict(),
+                "interval_95": interval,
+                "n_rows": len(rows),
+                "n_sites": len({b.site for b in rows}),
+                "arms": names,
+            }
+    for result in results:
+        result.detail.pop(_KEPT, None)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -351,9 +444,13 @@ def run_benchmark(
     initialised model. Reusing one instance across folds would let a fold's fit leak into the next.
 
     ``n_repeats`` draws of each random protocol are scored one by one, seeds ``seed`` onward;
-    ``n_boot`` site resamples give the grouped intervals (0 skips them). On the default device the
-    default run takes about four minutes, almost all of it the published network's
-    Levenberg-Marquardt training.
+    ``n_boot`` site resamples give the grouped intervals (0 skips them). With BLAS pinned to one thread
+    the default run takes about three minutes on the default device, almost all of it the published
+    network's Levenberg-Marquardt training; multi-threaded BLAS on a loaded machine can make it many
+    times slower, because the network's matrices are too small to share.
+
+    Every arm also carries ``detail["common"]``: its score on the rows every size-predicting arm
+    answered, which is reported beside the declared supports and never decides the verdict.
     """
     from .datasets import compute_dataset_digest
 
@@ -369,6 +466,7 @@ def run_benchmark(
             )
             for name, factory in arms.items()
         ]
+        _add_common_support(arm_results, repeated=repeated, n_boot=n_boot, boot_seed=boot_seed)
         results.append(
             ProtocolResult(
                 protocol=protocol_name,
@@ -669,14 +767,83 @@ def run_fixed_holdout(
     return results
 
 
+PUBLISHED_NETWORK_WIDTHS: dict[int, int] = {1: 9, 2: 7}
+"""The hidden widths Kulatilake, Hudaverdi and Wu 2012 chose per rock-stiffness group on their hold-out."""
+
+
+def network_width_sweep(
+    corpus: Sequence[Blast],
+    holdout: Sequence[Blast],
+    *,
+    widths: Sequence[int] = tuple(range(6, 16)),
+    n_simulations: int = 8,
+    seed: int = 0,
+) -> dict[str, object]:
+    """The published network's hidden width, swept under the source's protocol and held out by site.
+
+    The source swept the width over 6 to 15, with eight simulations per width, and chose 9 for the
+    high-modulus group and 7 for the low on its own hold-out, by RMSE and correlation. Two questions
+    follow and this answers both:
+
+    - ``published_protocol``: does the same procedure, reproduced here (train on the corpus, choose
+      per group on the 2012 hold-out), land on the published widths? It is
+      :meth:`PublishedNeuralNetwork.sweep_hidden_width`.
+    - ``leave_one_site_out``: how much does the width matter at a mine the network has not seen? Each
+      width (the same in both groups) is scored on the pooled out-of-fold predictions on both
+      ``SUPPORTS``, beside the published pair, which is the network as the benchmark runs it.
+
+    About two minutes for the default sweep with BLAS pinned to one thread; offline only.
+    """
+    from .learned import PublishedNeuralNetwork
+    from .splits import leave_one_site_out
+
+    widths = tuple(int(w) for w in widths)
+    published_protocol = PublishedNeuralNetwork(
+        n_simulations=n_simulations, seed=seed, sweep=widths
+    ).sweep_hidden_width(corpus, holdout)
+
+    splits = list(leave_one_site_out(corpus))
+    configs: list[tuple[bool, dict[int, int]]] = [(True, dict(PUBLISHED_NETWORK_WIDTHS))]
+    configs += [(False, {1: w, 2: w}) for w in widths]
+    table: list[dict[str, object]] = []
+    for published, hidden in configs:
+        tested: list[Blast] = []
+        predictions: list[Prediction] = []
+        for split in splits:
+            arm = PublishedNeuralNetwork(hidden=hidden, n_simulations=n_simulations, seed=seed)
+            arm.fit(split.train)
+            tested.extend(split.test)
+            predictions.extend(arm.predict(split.test))
+        by_id = {p.blast_id: p for p in predictions}
+        supports: dict[str, dict] = {}
+        for support, keep in SUPPORTS.items():
+            rows = [b for b in tested if keep(b)]
+            supports[support] = score(
+                rows, [by_id[b.blast_id] for b in rows], method="published-neural-net"
+            ).as_dict()
+        table.append({"hidden": hidden, "published": published, "supports": supports})
+
+    return {
+        "widths": list(widths),
+        "n_simulations": n_simulations,
+        "seed": seed,
+        "published_widths": dict(PUBLISHED_NETWORK_WIDTHS),
+        "published_protocol": published_protocol,
+        "leave_one_site_out": table,
+    }
+
+
 def default_arms(*, include_learned: bool = True) -> dict[str, Callable[[], Arm]]:
     """The ladder as the benchmark runs it, controls first.
 
     One predictor per distinct mean size: Kuz-Ram, Swebrec and the crush-zone composition return the
-    classical mean size and differ only in curve shape, so they are not benchmarked separately.
+    classical mean size and differ only in curve shape, so they are not benchmarked separately. The
+    in-situ cap does change the mean size where the classical prediction exceeds the block, so its arm
+    on the classical equation is benchmarked, as a declared choice rather than a published relation.
     """
     from .models import (
         GroupDiscriminant,
+        InSituCap,
         Kuznetsov,
         KuznetsovTransfer,
         Oracle,
@@ -689,6 +856,7 @@ def default_arms(*, include_learned: bool = True) -> dict[str, Callable[[], Arm]
         "oracle": Oracle,
         "kuznetsov": Kuznetsov,
         "kuznetsov-transfer": KuznetsovTransfer,
+        "kuznetsov-capped": lambda: InSituCap(Kuznetsov()),
         "group-discriminant": GroupDiscriminant,
         "published-regression": PublishedRegression,
         "refitted-regression": RefittedRegression,

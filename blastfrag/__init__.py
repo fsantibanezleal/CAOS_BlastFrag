@@ -32,7 +32,7 @@ Quick start::
 
 from __future__ import annotations
 
-__version__ = "0.03.000"
+__version__ = "0.04.000"
 __all__ = [
     "__version__",
     # types
@@ -65,16 +65,20 @@ __all__ = [
 
 from .benchmark import (
     KILL_CRITERION,
+    PUBLISHED_NETWORK_WIDTHS,
     PUBLISHED_RANDOM_SPLIT_R2,
     SUPPORTS,
     ArmResult,
     BenchmarkResult,
     ProtocolResult,
     default_arms,
+    network_width_sweep,
     run_benchmark,
     run_fixed_holdout,
 )
 from .classical import (
+    IN_SITU_CAP_SOURCE,
+    cap_at_in_situ_block,
     crush_zone,
     cunningham_uniformity_index,
     kuznetsov_x50_m,
@@ -118,6 +122,7 @@ from .models import (
     Arm,
     CrushZone,
     GroupDiscriminant,
+    InSituCap,
     Kuznetsov,
     KuznetsovTransfer,
     KuzRam,
@@ -161,12 +166,12 @@ from .types import (
 __all__ += [
     # classical
     "kuznetsov_x50_m", "cunningham_uniformity_index", "modified_uniformity_index",
-    "rosin_rammler", "swebrec", "crush_zone", "sieve_grid",
+    "rosin_rammler", "swebrec", "crush_zone", "cap_at_in_situ_block", "IN_SITU_CAP_SOURCE", "sieve_grid",
     # rock factor
     "rock_factor", "SCHEMES", "SITE_ROCK_FACTOR", "back_solve_rock_factor",
     "derive_site_rock_factors",
     # ladder
-    "Arm", "LADDER", "TIERS", "NullModel", "Oracle", "Kuznetsov", "KuznetsovTransfer", "KuzRam",
+    "Arm", "LADDER", "TIERS", "NullModel", "Oracle", "Kuznetsov", "KuznetsovTransfer", "InSituCap", "KuzRam",
     "Swebrec",
     "CrushZone", "GroupDiscriminant", "PublishedRegression", "RefittedRegression",
     "assign_group", "discriminant_score",
@@ -180,6 +185,7 @@ __all__ += [
 
 __all__ += [
     "run_benchmark", "run_fixed_holdout", "default_arms", "KILL_CRITERION", "SUPPORTS",
+    "network_width_sweep", "PUBLISHED_NETWORK_WIDTHS",
     "PUBLISHED_RANDOM_SPLIT_R2",
     "BenchmarkResult", "ProtocolResult", "ArmResult",
     # portable export: reading a document needs no optional dependency

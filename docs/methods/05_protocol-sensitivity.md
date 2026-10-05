@@ -57,6 +57,13 @@ the six-blast sites like the 22-blast quarry.
 geometry is resolvable. The classical arms can only answer on the second set, so comparing a classical
 score with a learned one over the first set compares different denominators.
 
+**Common support (0.4.0).** Each arm's abstentions are dropped from its own score, so even the
+`geometry` set leaves arms scored on different rows where an arm refuses a prediction outside the
+plausible range. Every score is therefore also reported on the rows that every size-predicting arm
+answered (the router, which predicts a group, is left out): per draw for the random protocols, once
+for the pooled held-out predictions, with its site interval. This is a row set reported beside the two
+declared ones; the criterion is not re-evaluated on it, because it was not declared before the run.
+
 **Site-resampled intervals.** The ten sites are resampled with replacement 2000 times and the pooled
 score recomputed (a cluster bootstrap, Field and Welsh 2007, `doi:10.1111/j.1467-9868.2007.00593.x`;
 the bootstrap itself, Efron 1979, `doi:10.1214/aos/1176344552`). The 2.5th and 97.5th percentiles
@@ -84,6 +91,7 @@ percent intervals. Measured with numpy 2.5.3, scikit-learn 1.9.0 and xgboost 3.4
 | oracle, return the measurement | 1.000 (1.00 to 1.00) | 1.000 | 1.000 | 1.00 to 1.00 | 1.000 | 1.00 to 1.00 |
 | classical mean size, site factor | 0.303 (-0.59 to 0.74) | 0.310 | 0.311 (6) | -0.96 to 0.70 | 0.311 | -0.97 to 0.69 |
 | classical mean size, transfer factor | 0.312 (-0.57 to 0.69) | 0.331 | 0.298 (6) | -1.10 to 0.72 | 0.298 | -1.10 to 0.71 |
+| classical mean size, site factor, capped at the in-situ block (declared) | 0.399 (-0.49 to 0.75) | 0.360 | 0.352 (6) | -0.95 to 0.74 | 0.352 | -0.96 to 0.73 |
 | group router | abstains | abstains | abstains | - | abstains | - |
 | published regression (in sample) | 0.805 (0.65 to 0.93) | 0.837 | 0.802 | 0.57 to 0.90 | 0.781 | 0.50 to 0.88 |
 | refitted regression | 0.686 (0.39 to 0.87) | 0.715 | -4.075 (4) | -19.48 to 0.02 | -4.601 | -21.92 to 0.09 |
@@ -99,6 +107,37 @@ learned arm, gradient boosting, is at -0.034 and the criterion is not met. Over 
 geometry, the stacked model is at 0.034, 0.266 above the null, and the criterion is met. The six blasts
 that separate the two are the Miami campaign, which has the smallest fragments in the corpus (mean
 0.080 m against 0.304 m) and is where the tree models fail hardest.
+
+### 4.1 On the rows every arm answers
+
+Held out by site the common rows are **79 blasts from nine sites**. They drop the six Miami blasts
+(no geometry for the classical arms) and twelve more that a fitted arm refused because its prediction
+left the plausible range: eight by the polynomial kernel (four at Akdaglar, three at Reocin-UG, one at
+Dongri-Buzurg; it also refuses three of the Miami blasts) and four by the refitted regression, all at
+Murgul. The radial kernel's one refusal, Ad3, is among the polynomial kernel's. The random draws keep a
+median of 17 of about 19 test rows.
+
+| Arm | random, median on common rows | site held out, on the 79 common rows | interval |
+|---|---|---|---|
+| null | -0.041 | -0.229 | -1.49 to -0.16 |
+| classical mean size, site factor | 0.320 | 0.318 | -0.93 to 0.67 |
+| classical mean size, transfer factor | 0.293 | 0.293 | -1.11 to 0.69 |
+| classical mean size, capped (declared) | 0.419 | 0.364 | -0.93 to 0.72 |
+| published regression (in sample) | 0.773 | 0.766 | 0.45 to 0.87 |
+| refitted regression | 0.671 | -3.715 | -22.09 to 0.10 |
+| published network | 0.329 | -0.491 | -2.85 to 0.13 |
+| support vector, radial | 0.656 | -0.329 | -1.68 to 0.01 |
+| support vector, polynomial | 0.344 | -4.837 | -17.69 to -1.05 |
+| random forest | 0.741 | -0.167 | -2.92 to 0.46 |
+| gradient boosting | 0.693 | 0.212 | -0.65 to 0.48 |
+| stacking ensemble | 0.691 | 0.215 | -0.66 to 0.49 |
+
+**Read these with their selection in mind.** The common rows are chosen by the arms' own refusals,
+and an arm refuses where it extrapolates, so the rows it drops are the hard ones. That is why the tree
+models rise from -0.034 over every blast to 0.21 here. It is also why the criterion is not evaluated on
+this set: a row set picked by which models failed, after the run, would be the post hoc choice the
+declared criterion exists to prevent. Even here no arm outside the in-sample regression has an interval
+above zero.
 
 ## 5. What the table supports
 

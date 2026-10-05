@@ -104,6 +104,44 @@ network fitted on it can assert. Outputs outside it are clamped before denormali
 This is not cosmetic. Without it the wildest simulations on `Ru7` average to zero and drag the arm's
 variance explained from positive to -1.18 on that row alone.
 
+### 2.5 The hidden width, reproduced and held out by site
+
+The source chose the hidden width on its own hold-out: 9 units for the high-modulus group, 7 for the
+low. `network_width_sweep` asks two questions of that choice (0.4.0; eight simulations per width, seed
+0, BLAS on one thread, about two minutes).
+
+**Does the source's procedure land on the published widths?** Train on the corpus, score each width
+from 6 to 15 on the 2012 hold-out, keep the width with the lowest RMSE per group:
+
+| Group | Published | Reproduced | RMSE at the reproduced width | RMSE at the published width |
+|---|---|---|---|---|
+| 1, high modulus | 9 | 8 | 0.037 m | 0.102 m |
+| 2, low modulus | 7 | 11 | 0.106 m | 0.133 m |
+
+It does not, and the RMSE moves non-monotonically between adjacent widths (0.037 m at 8 and 0.102 m
+at 9 for the high-modulus group), which is the instability the source's own tables show.
+
+**Does any width transfer to a site the network has not seen?** Each width, the same in both groups,
+scored on the pooled leave-one-site-out predictions:
+
+| Hidden width | variance explained, every blast (97) | blasts with geometry (91) |
+|---|---|---|
+| 9 and 7, the published pair | -0.626 | -0.604 |
+| 6 | -0.605 | -0.630 |
+| 7 | -0.653 | -0.635 |
+| 8 | -0.626 | -0.562 |
+| 9 | -0.586 | -0.604 |
+| 10 | -0.902 | -0.955 |
+| 11 | -0.568 | -0.681 |
+| 12 | -1.027 | -1.169 |
+| 13 | -0.717 | -0.747 |
+| 14 | -1.257 | -1.296 |
+| 15 | -1.486 | -1.603 |
+
+No width explains any variance held out by site, and the wider networks fail hardest. The published
+pair reproduces the benchmark's own score for this arm exactly (-0.626), which checks the sweep. The
+width choice neither explains nor rescues the network's failure to transfer.
+
 ## 3. The 2025 arms
 
 ### 3.1 Support vector regression, in two published parameterisations

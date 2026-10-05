@@ -32,7 +32,7 @@ Quick start::
 
 from __future__ import annotations
 
-__version__ = "0.03.000"
+__version__ = "0.04.000"
 __all__ = [
     "__version__",
     # types
@@ -65,12 +65,14 @@ __all__ = [
 
 from .benchmark import (
     KILL_CRITERION,
+    PUBLISHED_NETWORK_WIDTHS,
     PUBLISHED_RANDOM_SPLIT_R2,
     SUPPORTS,
     ArmResult,
     BenchmarkResult,
     ProtocolResult,
     default_arms,
+    network_width_sweep,
     run_benchmark,
     run_fixed_holdout,
 )
@@ -183,6 +185,7 @@ __all__ += [
 
 __all__ += [
     "run_benchmark", "run_fixed_holdout", "default_arms", "KILL_CRITERION", "SUPPORTS",
+    "network_width_sweep", "PUBLISHED_NETWORK_WIDTHS",
     "PUBLISHED_RANDOM_SPLIT_R2",
     "BenchmarkResult", "ProtocolResult", "ArmResult",
     # portable export: reading a document needs no optional dependency

@@ -1,7 +1,5 @@
 # Requirements: the network width sweep
 
-Status: planned
-
 Designed 2026-10-05, before its code (ADR-0075), to close audit item A-12: the published network's hidden widths
 are fixed at the source's optima (9 and 7), chosen on the source's own hold-out, and the sweep its docstring
 describes was never shown. EARS.

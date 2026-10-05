@@ -1,7 +1,5 @@
 # Requirements: common support
 
-Status: planned
-
 Designed 2026-10-05, before its code (ADR-0075), to close audit item A-15: abstentions are dropped per arm, so
 arms are compared on different rows under every protocol (the polynomial kernel abstains on 11 of 97 held out by
 site, the classical arms on the six Miami blasts). EARS.

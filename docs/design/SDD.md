@@ -44,8 +44,9 @@ Non-goals, each something a reader could reasonably assume:
 
 A library has no web lane of its own; it declares what its consumers may run where.
 
-- **Offline**: fitting the learned arms and the benchmark (about two minutes for the default 100 draws with BLAS
-  pinned to one thread; see Risks). Never in CI (ADR-0074): CI runs the numpy-only tests.
+- **Offline**: fitting the learned arms and the benchmark (191 s for the default 100 draws with BLAS pinned to one
+  thread, measured on 2026-10-05, and about two minutes more for the network width sweep; see Risks). Never in CI
+  (ADR-0074): CI runs the numpy-only tests.
 - **Live in a consumer's browser**: the closed forms, which a consumer ports and holds to the engine by a parity
   test, and every learned arm through the portable export.
 - **Replayed**: the benchmark and the per-case predictions a consumer bakes and commits.

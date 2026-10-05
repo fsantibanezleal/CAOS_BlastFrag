@@ -32,6 +32,15 @@ modulus over the other sites. Site-resampled intervals put it, and every learned
 Whether the learned tier meets the declared criterion depends on whether one six-blast campaign is
 scored.
 
+**The classical equation predicts fragments larger than the blocks they come from.** It does not read
+the in-situ block size, and on three Reocin blasts it predicts a mean size above it, while no measured
+mean size anywhere exceeds its block. Capping it at the block, a declared choice of this package rather
+than a published relation, lifts its held-out score from 0.311 to 0.352; the interval still spans zero.
+
+**The published network's width is not where its own procedure lands.** Reproduced, the source's
+selection on its hold-out picks 8 and 11 hidden units, not the published 9 and 7, and held out by site
+no width from 6 to 15 explains any variance.
+
 **The classical model, as published, barely beats a constant.** On the published twelve-blast
 hold-out it explains 0.232 of the variance about the identity line, and its root-mean-square error of
 0.1279 m improves on predicting the training mean by 13 percent. The figure usually quoted for it,
@@ -108,8 +117,16 @@ print(result.verdict["outcome"])
 
 Random protocols are repeated and reported by their spread; leave-one-site-out is pooled and scored
 on every blast and on the blasts with resolvable geometry, each with a site-resampled interval; every
-arm declares what it was fitted on, and arms fitted on the corpus itself are reported apart from the
-arms that transfer. See [the protocol-sensitivity benchmark](docs/methods/05_protocol-sensitivity.md).
+score is also reported on the rows every size-predicting arm answered; every arm declares what it was
+fitted on, and arms fitted on the corpus itself are reported apart from the arms that transfer. See
+[the protocol-sensitivity benchmark](docs/methods/05_protocol-sensitivity.md).
+`bf.network_width_sweep(train, holdout)` sweeps the published network's hidden width under the
+source's protocol and held out by site ([the learned rung](docs/methods/06_learned.md), section 2.5).
+
+Pin BLAS to one thread for these runs (`OPENBLAS_NUM_THREADS=1`, likewise `OMP_` and `MKL_`). The
+network's matrices are tiny, and on a loaded machine a multi-threaded BLAS spends its time spinning:
+one fit at width 15 took more than six minutes against 1.9 s on one thread (2026-10-05). On one
+thread the default benchmark takes about three minutes and the width sweep about two.
 
 ## Running a fitted arm elsewhere
 
@@ -130,7 +147,8 @@ No mechanistic simulation: there is no discrete-element or hybrid stress blastin
 engine, licence or reference output was available to build one on. No non-ideal detonics. No
 flyrock and no ground vibration. Model constants that no primary source prints, including the timing
 factor of the modified classical model and the crush-zone branch parameters, are exposed as
-user-supplied values with documented ranges rather than invented.
+user-supplied values with documented ranges rather than invented. The in-situ cap is a declared
+modelling choice, labelled on every result. The design document is [`docs/design/SDD.md`](docs/design/SDD.md).
 
 ## Licence
 

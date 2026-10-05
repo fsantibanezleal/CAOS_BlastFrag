@@ -673,10 +673,13 @@ def default_arms(*, include_learned: bool = True) -> dict[str, Callable[[], Arm]
     """The ladder as the benchmark runs it, controls first.
 
     One predictor per distinct mean size: Kuz-Ram, Swebrec and the crush-zone composition return the
-    classical mean size and differ only in curve shape, so they are not benchmarked separately.
+    classical mean size and differ only in curve shape, so they are not benchmarked separately. The
+    in-situ cap does change the mean size where the classical prediction exceeds the block, so its arm
+    on the classical equation is benchmarked, as a declared choice rather than a published relation.
     """
     from .models import (
         GroupDiscriminant,
+        InSituCap,
         Kuznetsov,
         KuznetsovTransfer,
         Oracle,
@@ -689,6 +692,7 @@ def default_arms(*, include_learned: bool = True) -> dict[str, Callable[[], Arm]
         "oracle": Oracle,
         "kuznetsov": Kuznetsov,
         "kuznetsov-transfer": KuznetsovTransfer,
+        "kuznetsov-capped": lambda: InSituCap(Kuznetsov()),
         "group-discriminant": GroupDiscriminant,
         "published-regression": PublishedRegression,
         "refitted-regression": RefittedRegression,

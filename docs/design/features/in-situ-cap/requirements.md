@@ -1,10 +1,8 @@
 # Requirements: the in-situ block cap
 
-Status: planned
-
 Designed 2026-10-05, before its code (ADR-0075). The cap is a declared modelling choice of this package, not a
-published relation: research dossier `wip/fragmenta/research-2026-09-09-method-survey.md` section 1.8 records that
-no held source prints it. EARS.
+published relation: the method survey behind this package (2026-09-09) found that no held source prints it.
+EARS.
 
 | ID | Requirement | Gate |
 |---|---|---|

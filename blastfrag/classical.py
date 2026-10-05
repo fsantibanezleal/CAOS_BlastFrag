@@ -23,6 +23,8 @@ __all__ = [
     "rosin_rammler",
     "swebrec",
     "crush_zone",
+    "cap_at_in_situ_block",
+    "IN_SITU_CAP_SOURCE",
     "sieve_grid",
     "TimingFactor",
     "CrushZoneParameters",
@@ -277,6 +279,48 @@ def swebrec(
                 "Babaeian et al. 2019 found Rosin-Rammler closer to image analysis at the Jajarm "
                 "bauxite mine, so this function is more adaptable in general and not everywhere"
             ),
+        },
+    )
+
+
+IN_SITU_CAP_SOURCE = (
+    "a declared modelling choice of this package, not a published relation: no fragment is predicted "
+    "larger than the in-situ block it came from. Hudaverdi, Kulatilake and Kuzu 2010 "
+    "doi:10.1002/nag.957 frame blasting as the transformation of the in-situ block size distribution "
+    "into the blasted one; no held source prints a cap"
+)
+
+
+def cap_at_in_situ_block(distribution: SizeDistribution, in_situ_block_m: float) -> SizeDistribution:
+    """No fragment larger than the in-situ block, a declared modelling choice of this package.
+
+    A blast breaks blocks and does not fuse them, so mass a curve places above the in-situ block size
+    ``XB`` is read as unbroken blocks at that size::
+
+        P_cap(x) = P(x)   for x < XB,   1 otherwise
+
+    which makes the mean size ``min(x50, XB)``. Clamping rather than renormalising is the choice:
+    dividing by ``P(XB)`` would move that mass into the fines, which no mechanism here supports.
+
+    No held dataset carries a measured size distribution, so the capped curve is not validated.
+    """
+    if in_situ_block_m <= 0:
+        raise ValueError(f"the in-situ block size must be positive, got {in_situ_block_m}")
+    passing = [
+        p if x < in_situ_block_m else 1.0
+        for x, p in zip(distribution.sizes_m, distribution.passing)
+    ]
+    return SizeDistribution(
+        method=f"{distribution.method}-capped",
+        sizes_m=list(distribution.sizes_m),
+        passing=passing,
+        x50_m=min(distribution.x50_m, in_situ_block_m),
+        detail=distribution.detail
+        | {
+            "in_situ_block_m": in_situ_block_m,
+            "cap_binds": distribution.x50_m > in_situ_block_m,
+            "uncapped_x50_m": distribution.x50_m,
+            "cap_source": IN_SITU_CAP_SOURCE,
         },
     )
 

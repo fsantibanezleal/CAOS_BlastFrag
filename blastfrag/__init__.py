@@ -75,6 +75,8 @@ from .benchmark import (
     run_fixed_holdout,
 )
 from .classical import (
+    IN_SITU_CAP_SOURCE,
+    cap_at_in_situ_block,
     crush_zone,
     cunningham_uniformity_index,
     kuznetsov_x50_m,
@@ -118,6 +120,7 @@ from .models import (
     Arm,
     CrushZone,
     GroupDiscriminant,
+    InSituCap,
     Kuznetsov,
     KuznetsovTransfer,
     KuzRam,
@@ -161,12 +164,12 @@ from .types import (
 __all__ += [
     # classical
     "kuznetsov_x50_m", "cunningham_uniformity_index", "modified_uniformity_index",
-    "rosin_rammler", "swebrec", "crush_zone", "sieve_grid",
+    "rosin_rammler", "swebrec", "crush_zone", "cap_at_in_situ_block", "IN_SITU_CAP_SOURCE", "sieve_grid",
     # rock factor
     "rock_factor", "SCHEMES", "SITE_ROCK_FACTOR", "back_solve_rock_factor",
     "derive_site_rock_factors",
     # ladder
-    "Arm", "LADDER", "TIERS", "NullModel", "Oracle", "Kuznetsov", "KuznetsovTransfer", "KuzRam",
+    "Arm", "LADDER", "TIERS", "NullModel", "Oracle", "Kuznetsov", "KuznetsovTransfer", "InSituCap", "KuzRam",
     "Swebrec",
     "CrushZone", "GroupDiscriminant", "PublishedRegression", "RefittedRegression",
     "assign_group", "discriminant_score",

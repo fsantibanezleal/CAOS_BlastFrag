@@ -2,6 +2,39 @@
 
 All notable changes to this project. Format follows Keep a Changelog; newest on top.
 
+## [0.04.000] - 2026-10-05
+
+Three gaps the 0.3.0 audit left open, each designed before its code in the new design document, and that
+document itself.
+
+### Added
+
+- `docs/design/SDD.md` (ADR-0075): the design of the package, written retroactively for 0.1.0 to 0.3.0 and before
+  the code for this release, with seven feature documents whose 66 requirements each name the test that holds it.
+  `scripts/check_sdd.py` fails CI when a named test does not exist.
+- The in-situ block cap, a declared modelling choice rather than a published relation: no fragment is predicted
+  larger than its in-situ block. `cap_at_in_situ_block` clamps a passing curve at the block size;
+  `InSituCap(arm)` caps an arm's mean size and records where it bound; `kuznetsov-capped` joins the default
+  ladder. On the corpus it binds on Rc1, Rc2 and Rc3 only (predicted 0.72 to 0.81 m against a 0.68 m block,
+  measured 0.46 to 0.48 m) and lifts the classical arm from 0.311 to 0.352 held out by site and from 0.303 to
+  0.399 at the median random draw; its interval still spans zero.
+- Common support: every arm under every protocol is also scored on the rows every size-predicting arm answered
+  (`detail["common"]`, per draw for the random protocols, with a site interval held out by site). Held out by site
+  those are 79 blasts from nine sites; the tree models rise to 0.21 there because the rows other arms refuse are
+  the hard ones, which is why the criterion stays on the two row sets declared before the run.
+- `network_width_sweep`: the published network's hidden width under the source's protocol and held out by site.
+  The source's procedure, reproduced, picks 8 and 11 hidden units rather than the published 9 and 7, and held out
+  by site no width from 6 to 15 explains any variance (-0.57 to -1.49; the published pair -0.626).
+
+### Changed
+
+- The classical method page's closing section said the arm scores 0.311 held out by site "because it has nothing
+  to overfit" and ranked it second to the in-sample regression; it now states the protocol-invariance of a
+  fixed-coefficient arm, the transfer arm's 0.298 and the interval.
+- The benchmark's timing note: pin BLAS to one thread. On a loaded machine one network fit at width 15 took more
+  than six minutes multi-threaded against 1.9 s on one thread; the default benchmark takes about three minutes on
+  one thread.
+
 ## [0.03.000] - 2026-10-04
 
 An adversarial re-run of 0.2.2 found that several reported effects came from the evaluation design

@@ -142,11 +142,56 @@ crossover size, the fines-branch uniformity and the fines fraction are caller-su
 stated as plausible starting values rather than published ones, and every distribution this returns
 carries that distinction in its detail.
 
-## 5. What the classical rung actually achieves
+## 5. The in-situ cap, a declared choice
+
+A blast breaks blocks and does not fuse them, so no fragment can be larger than the in-situ block it came
+from. Hudaverdi, Kulatilake and Kuzu 2010 frame blasting as exactly that transformation, from the in-situ
+block size distribution to the blasted one. The mean-size equation above does not read the block size at
+all, and **no held source prints a cap**, so this is a modelling choice of this package and every result
+says so (`declared_not_published` in the arm's provenance).
+
+The cap reads the mass a curve places above the in-situ block size $X_B$ as unbroken blocks at that size:
+
+$$
+P_{\mathrm{cap}}(x) = \begin{cases} P(x) & x < X_B \\ 1 & x \ge X_B \end{cases}
+\qquad\Rightarrow\qquad x_{50,\mathrm{cap}} = \min(x_{50},\, X_B)
+$$
+
+Clamping rather than renormalising is the choice: dividing by $P(X_B)$ would move that mass into the fines,
+which no mechanism here supports.
+
+**Where it binds.** On the training corpus the classical equation predicts a mean size above the block on
+three Reocin blasts, and nowhere else; no measured mean size anywhere exceeds its block.
+
+| Blast | Measured | Predicted | Block | Capped |
+|---|---|---|---|---|
+| Rc1 | 0.46 m | 0.720 m | 0.68 m | 0.68 m |
+| Rc2 | 0.48 m | 0.765 m | 0.68 m | 0.68 m |
+| Rc3 | 0.48 m | 0.806 m | 0.68 m | 0.68 m |
+
+**What it changes**, measured on 2026-10-05 with 100 draws per random protocol and 2000 site resamples:
+
+| | uncapped | capped |
+|---|---|---|
+| held out by site, variance explained | 0.311 | 0.352 |
+| its site-resampled 95 percent interval | -0.96 to 0.70 | -0.95 to 0.74 |
+| median of 100 random 80/20 draws | 0.303 | 0.399 |
+
+The random-draw median moves more than the held-out score because a 19-row test set that contains one of
+the three blasts is dominated by its error. The interval still spans zero. No held dataset carries a
+measured size distribution, so the capped curve shape (`cap_at_in_situ_block`) is not validated; only its
+mean-size effect is scored. The arm is `kuznetsov-capped`, `InSituCap(Kuznetsov())`.
+
+## 6. What the classical rung actually achieves
 
 On the published twelve-blast hold-out: variance explained about the identity line **0.232**, squared
 correlation 0.570, root mean square error 0.128 m against a null model's 0.147 m. It beats predicting
 a constant by 13 percent, and it is the worst of the three arms printed in its own source table.
 
-Held out by whole site it reaches **0.311**, second only to the published regression, because it has
-nothing to overfit. See [the protocol-sensitivity benchmark](05_protocol-sensitivity.md).
+Held out by whole site it scores **0.311** over the 91 blasts it can answer, and 0.303 at the median of
+100 random 80/20 draws: a fixed-coefficient arm scores about the same under every protocol, because only
+the scored rows change. Its rock factor is back-solved from the held-out site's own published predictions;
+predicted instead from the modulus by a line over the other sites (the transfer arm, see
+[the transfer rung](07_transfer.md)) it scores 0.298, so its score is not borrowed from the held-out site.
+Its site-resampled 95 percent interval runs from -0.96 to 0.70, so with ten sites it is not distinguishable
+from predicting the corpus mean. See [the protocol-sensitivity benchmark](05_protocol-sensitivity.md).

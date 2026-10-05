@@ -119,11 +119,12 @@ def test_in_sample_arms_are_reported_apart_from_the_arms_that_transfer(result):
     assert "all 97 blasts" in in_sample["published-regression"][2]
     positive = dict(verdict["arms_with_positive_variance_explained_across_sites"])
     assert "published-regression" not in positive
-    assert set(positive) == {"kuznetsov", "kuznetsov-transfer"}
+    assert set(positive) == {"kuznetsov", "kuznetsov-transfer", "kuznetsov-capped"}
     assert result.provenance["group-discriminant"]["in_sample_corpus"] is True
     assert result.provenance["refitted-regression"]["router_in_sample"] is True
     assert result.provenance["published-neural-net"]["router_in_sample"] is True
-    assert verdict["site_constant_arms"] == ["kuznetsov"]
+    # The cap inherits the site factor of the arm it caps, so it reads a site constant too.
+    assert verdict["site_constant_arms"] == ["kuznetsov", "kuznetsov-capped"]
 
 
 def test_the_classical_result_does_not_depend_on_the_held_out_sites_rock_factor(result):
